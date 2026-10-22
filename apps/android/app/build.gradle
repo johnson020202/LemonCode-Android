@@ -6,7 +6,7 @@ String codeText = providers.environmentVariable('ANDROID_VERSION_CODE').getOrEls
 if (!(codeText ==~ /[1-9][0-9]{0,9}/) || codeText.toLong() > 2100000000L) {
     throw new GradleException('ANDROID_VERSION_CODE must be an integer from 1 to 2100000000')
 }
-String nameText = providers.environmentVariable('ANDROID_VERSION_NAME').getOrElse('0.1.0-preview')
+String nameText = providers.environmentVariable('ANDROID_VERSION_NAME').getOrElse('0.1.0')
 if (nameText.trim().isEmpty() || nameText.length() > 100 || nameText.toCharArray().any { Character.isISOControl(it) }) {
     throw new GradleException('ANDROID_VERSION_NAME must be a nonempty printable version (max 100 characters)')
 }
@@ -54,10 +54,10 @@ android {
     }
     buildTypes {
         debug {
-            resValue 'string', 'app_name', 'LemonCode Android Preview'
+            resValue 'string', 'app_name', 'LemonCode Android (debug)'
         }
         release {
-            resValue 'string', 'app_name', 'LemonCode Android Preview'
+            resValue 'string', 'app_name', 'LemonCode'
             debuggable false
             minifyEnabled false
             if (signingReady) {

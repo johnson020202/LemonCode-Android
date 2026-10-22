@@ -28,7 +28,16 @@ test("build workflow keeps verification gates and does not publish releases", as
   ]) {
     assert.ok(workflow.includes(command), `Missing gate: ${command}`);
   }
-  assert.doesNotMatch(workflow, /continue-on-error|gh release|pull_request_target/u);
+  assert.doesNotMatch(workflow, /continue-on-error|pull_request_target/u);
+});
+
+test("release workflow signs with repository secrets and never falls back to a debug key", async () => {
+  const workflow = await readFile(resolve(root, ".github/workflows/android-release.yml"), "utf8");
+  assert.ok(workflow.includes("secrets.ANDROID_KEYSTORE_BASE64"));
+  assert.ok(workflow.includes("assembleRelease"));
+  assert.match(workflow, /CN=Android Debug/u); // 断言显式拒绝 debug 证书
+  assert.ok(workflow.includes("gh release create"));
+  assert.doesNotMatch(workflow, /keytool -genkeypair/u);
 });
 
 test("standalone WebView keeps security boundaries", async () => {

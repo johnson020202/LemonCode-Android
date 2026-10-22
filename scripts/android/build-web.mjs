@@ -90,7 +90,7 @@ export async function main(argv = process.argv.slice(2)) {
     sourceSha: baseline.currentSha,
     sourceDirty: baseline.sourceDirty,
     clientVersion: version,
-    versionName: process.env.ANDROID_VERSION_NAME || `${version}-android-preview`,
+    versionName: process.env.ANDROID_VERSION_NAME || `${version}-android`,
     versionCode: Number(process.env.ANDROID_VERSION_CODE || "1"),
     builtAt: new Date().toISOString(),
     stageOnly: argv.includes("--stage-only"),

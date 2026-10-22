@@ -31,7 +31,8 @@ node scripts/android/verify-apk.mjs
 - `.github/workflows/android-build.yml`：push main / PR / 手动触发；跑脚本测试、`pnpm typecheck`、`pnpm lint`、架构检查、移动端契约测试、独立运行时构建、Gradle 单测/lint/打包，并校验 APK 内容后上传 artifact。
 - `.github/workflows/android-upstream-sync.yml`：每 30 分钟检查上游 `lemon-casino/LemonCode` main，用普通 merge 保留 Android 适配，冲突即失败且不推送；成功后显式调用构建流程。
 - 轮询无法保证“每次上游 push 立即构建”；严格实时需上游仓库接入 workflow 或 webhook。
-- 当前仓库：`johnson020202/LemonCode-Android`（私有）。构建产物是 debug 包，未做正式签名与发布。
+- 当前仓库：`johnson020202/LemonCode-Android`（私有）。
+- `.github/workflows/android-release.yml`：打 `android-v*` tag 或手动运行会产出**固定密钥签名**的 release APK，并按需创建 GitHub Release。密钥保存在仓库 Secrets（`ANDROID_KEYSTORE_BASE64` 等），缺少任一项即失败，绝不回退 debug 证书。
 
 ## 已验证（2026-10-22）
 
