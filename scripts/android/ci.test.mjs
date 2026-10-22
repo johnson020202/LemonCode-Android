@@ -38,7 +38,10 @@ test("release workflow signs with repository secrets and never falls back to a d
   assert.match(workflow, /CN=Android Debug/u); // 断言显式拒绝 debug 证书
   assert.ok(workflow.includes("gh release create"));
   // 创建 Release 需要 job 级 contents: write；顶层仍保持只读。
-  assert.match(workflow, /jobs:\s*\n\s*release:[\s\S]{0,200}?permissions:\s*\n\s*contents: write/u);
+  assert.match(
+    workflow,
+    /jobs:\s*\n\s*release:[\s\S]{0,200}?permissions:[\s\S]{0,160}?contents: write/u,
+  );
   assert.ok(
     workflow.includes("build-tools/*/apksigner"),
     "apksigner must resolve from SDK build-tools",
