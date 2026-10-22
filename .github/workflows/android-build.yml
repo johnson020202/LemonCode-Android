@@ -42,9 +42,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - uses: android-actions/setup-android@v3
       - name: Prepare Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        run: |
+          # runner 已预装 SDK；setup-android 会请求已下线的 tools 包而失败。
+          test -n "$ANDROID_HOME"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
       - name: Install locked frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Identify upstream and guard reviewed contracts
