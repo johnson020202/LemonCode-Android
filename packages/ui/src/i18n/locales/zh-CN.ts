@@ -2625,6 +2625,7 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.syncModelsSelection": "已选 {selected}/{total}",
   "settings.modelProvider.syncModelsChecking": "检测中",
   "settings.modelProvider.syncModelsFailed": "检测失败",
+  "settings.modelProvider.syncModelsInconclusive": "超时，已保留原状态",
   "settings.modelProvider.syncModelsSaveFailed": "保存失败",
   "settings.modelProvider.syncModelsProbeSuccess": "已验证并启用",
   "settings.modelProvider.syncModelsEmpty": "供应商没有返回模型。",

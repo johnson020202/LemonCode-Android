@@ -58,6 +58,47 @@ test("failed and thrown probes never add an unconfigured model", async () => {
   }
 });
 
+test("an inconclusive probe never disables an existing model", async () => {
+  // 60 秒探测 deadline 与 4 路并发排队会让排在后面的探测以“cancelled”结束；
+  // 若据此禁用，已配置模型会成批从选择器消失，形成“选模型空白”。
+  for (const message of [
+    "Model request was cancelled.",
+    "The operation was aborted due to timeout",
+    "Aborted",
+  ]) {
+    const { input, writes } = fixture(true);
+    const result = await probeAndSyncModel({
+      ...input,
+      probe: async () => ({ success: false, error: { message } }),
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.inconclusive, true);
+    assert.deepEqual(writes, [], "inconclusive probes must not change enabled state");
+  }
+});
+
+test("an inconclusive probe keeps remote models out of the list", async () => {
+  const { input, writes } = fixture();
+  const result = await probeAndSyncModel({
+    ...input,
+    probe: async () => ({ success: false, error: { message: "Model request was cancelled." } }),
+  });
+  assert.equal(result.inconclusive, true);
+  assert.deepEqual(writes, []);
+});
+
+test("provider rejections still disable an existing model", async () => {
+  for (const message of ["Provider authentication failed.", "HTTP 403", "Model unavailable."]) {
+    const { input, writes } = fixture(true);
+    const result = await probeAndSyncModel({
+      ...input,
+      probe: async () => ({ success: false, error: { message } }),
+    });
+    assert.equal(result.inconclusive, undefined);
+    assert.deepEqual(writes, ["enabled:false"]);
+  }
+});
+
 test("configured model is probed before changing its enabled state and never re-added", async () => {
   for (const success of [true, false]) {
     const { input, writes } = fixture(true);

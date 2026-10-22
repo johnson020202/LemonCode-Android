@@ -72,6 +72,11 @@ export const MODEL_CONNECTIVITY_ERROR_CODES = [
   "provider-unavailable",
   "model-unavailable",
   "model-not-found",
+  /**
+   * 探测在给出结论前被取消或超时（例如撞上探测 deadline、并发队列被关闭）。
+   * 它不是供应商对模型的否定判断，调用方不得据此删除或禁用模型，只提示可重试。
+   */
+  "inconclusive",
 ] as const;
 
 /** 一个正式 Model 执行链的连通性测试结果。 */

@@ -21,6 +21,8 @@ export function classifyModelConnectivityFailure(
   abortSignal?: AbortSignal,
 ): Extract<ModelConnectivityResult, { success: false }> {
   const confirmed = !abortSignal?.aborted && hasConfirmedModelRejection(error);
+  // 取消/超时只说明这次探测没有结论：调用方不能据此禁用已配置模型。
+  const inconclusive = !confirmed && isCancellation(error, abortSignal);
   return {
     success: false,
     error: {
@@ -30,9 +32,29 @@ export function classifyModelConnectivityFailure(
           : typeof error === "string"
             ? error
             : "Model connectivity test failed.",
-      ...(confirmed ? { code: "model-not-found" as const } : {}),
+      ...(confirmed
+        ? { code: "model-not-found" as const }
+        : inconclusive
+          ? { code: "inconclusive" as const }
+          : {}),
     },
   };
+}
+
+/** 供应商没表态，只是本地主动放弃了对这次请求的等待。 */
+function isCancellation(error: unknown, abortSignal?: AbortSignal): boolean {
+  if (abortSignal?.aborted) return true;
+  const record = error !== null && typeof error === "object" ? (error as Record<string, unknown>) : undefined;
+  const name = typeof record?.name === "string" ? record.name : "";
+  const code = typeof record?.code === "string" ? record.code : "";
+  return (
+    name === "AbortError" ||
+    name === "TimeoutError" ||
+    code === "ABORT_ERR" ||
+    code === ModelErrorCode.ModelRequestCancelled ||
+    code === ModelErrorCode.ModelRequestTimeout ||
+    code === "LCODE_PROTOCOL_REQUEST_TIMEOUT"
+  );
 }
 
 function hasConfirmedModelRejection(error: unknown): boolean {

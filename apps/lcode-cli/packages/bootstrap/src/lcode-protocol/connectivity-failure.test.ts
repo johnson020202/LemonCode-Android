@@ -111,17 +111,22 @@ test("HTTP failures never become cleanup evidence without an exact model rejecti
 
 test("local selection/configuration, network, abort, timeout, strings and lookalike objects stay unknown", async () => {
   const confirmedCause = providerFailure("model_not_found");
-  const unknowns: unknown[] = [
-    new ModelProtocolError(ModelErrorCode.ModelNotFound, "model_not_found"),
-    createCoreError(CoreErrorType.ConfigurationError, "missing model", { cause: confirmedCause }),
-    createCoreError(CoreErrorType.ModelTimeout, "timeout", { cause: confirmedCause }),
-    Object.assign(new Error("network"), { code: "ECONNRESET" }),
+  // 取消/超时类错误不是供应商结论，但也不再是“无 code 的普通失败”，
+  // 而是明确的 inconclusive：调用方据此保留模型而非禁用。
+  const cancellations: unknown[] = [
     Object.assign(new DOMException("cancelled", "AbortError"), { cause: confirmedCause }),
     Object.assign(new DOMException("timeout", "TimeoutError"), { cause: confirmedCause }),
     new AiSdkModelAdapterError(ModelErrorCode.ModelRequestCancelled, "cancelled", {
       cause: confirmedCause,
       context: { reason: "cancelled" },
     }),
+  ];
+  for (const error of cancellations) assert.equal(await failureCode(error), "inconclusive");
+  const unknowns: unknown[] = [
+    new ModelProtocolError(ModelErrorCode.ModelNotFound, "model_not_found"),
+    createCoreError(CoreErrorType.ConfigurationError, "missing model", { cause: confirmedCause }),
+    createCoreError(CoreErrorType.ModelTimeout, "timeout", { cause: confirmedCause }),
+    Object.assign(new Error("network"), { code: "ECONNRESET" }),
     new AiSdkModelAdapterError(ModelErrorCode.ModelRequestFailed, "network", {
       cause: confirmedCause,
       context: { source: "network" },
@@ -139,6 +144,25 @@ test("local selection/configuration, network, abort, timeout, strings and lookal
   const cyclic = new Error("cyclic") as Error & { cause: unknown };
   cyclic.cause = cyclic;
   assert.equal(await failureCode(cyclic), undefined);
+});
+
+test("cancellation and timeout report inconclusive so callers keep the model", async () => {
+  // 取消不是供应商结论：调用方必须保留原启用状态，只有 model-not-found 才能关闭/删除模型。
+  const aborted = new DOMException("aborted", "AbortError");
+  const timedOut = new DOMException("timeout", "TimeoutError");
+  const protocolTimeout = Object.assign(new Error("request timed out"), {
+    code: "LCODE_PROTOCOL_REQUEST_TIMEOUT",
+  });
+  const cancelledAdapter = new AiSdkModelAdapterError(
+    ModelErrorCode.ModelRequestCancelled,
+    "cancelled",
+    { context: { reason: "cancelled" } },
+  );
+  for (const error of [aborted, timedOut, protocolTimeout, cancelledAdapter]) {
+    assert.equal(await failureCode(error), "inconclusive");
+  }
+  // 结构化否定仍是删除依据，不可被 inconclusive 吞掉。
+  assert.equal(await failureCode(providerFailure("model_not_found")), "model-not-found");
 });
 
 test("connectivity failures expose only message and optional stable code", async () => {

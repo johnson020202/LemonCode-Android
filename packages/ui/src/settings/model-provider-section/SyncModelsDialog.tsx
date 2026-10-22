@@ -333,7 +333,11 @@ export function SyncModelsDialog(props: SyncModelsDialogProps) {
                   ) : result ? (
                     <span
                       className={
-                        result.success ? "text-ui-sm text-success" : "text-ui-sm text-destructive"
+                        result.success
+                          ? "text-ui-sm text-success"
+                          : result.inconclusive
+                            ? "text-ui-sm text-foreground-subtle"
+                            : "text-ui-sm text-destructive"
                       }
                     >
                       {intl.formatMessage({
@@ -341,7 +345,9 @@ export function SyncModelsDialog(props: SyncModelsDialogProps) {
                           ? "settings.modelProvider.syncModelsProbeSuccess"
                           : result.stage === "save"
                             ? "settings.modelProvider.syncModelsSaveFailed"
-                            : "settings.modelProvider.syncModelsFailed",
+                            : result.inconclusive
+                              ? "settings.modelProvider.syncModelsInconclusive"
+                              : "settings.modelProvider.syncModelsFailed",
                       })}
                     </span>
                   ) : null}

@@ -7,6 +7,31 @@ export interface SyncModelProbeResult {
   readonly success: boolean;
   readonly stage?: "probe" | "save";
   readonly message?: string;
+  /**
+   * 探测因超时/并发排队取消而中断，而不是供应商给出了否定结论。
+   * 这类结果不能作为关闭已配置模型的依据，否则一次探测压力就会让模型从可选列表消失。
+   */
+  readonly inconclusive?: boolean;
+}
+
+const INCONCLUSIVE_MESSAGE = /cancelled|aborted|timed? ?out|timeout/i;
+
+/** 只把“供应商明确拒绝”之外的中断识别为不可判定，避免掩盖真实鉴权/模型错误。 */
+export function isInconclusiveProbeMessage(message: string | undefined): boolean {
+  return message !== undefined && INCONCLUSIVE_MESSAGE.test(message);
+}
+
+/**
+ * 协议返回的结论是否足以判定模型不可用。
+ * 优先使用目标 Environment 给出的结构化 code；旧协议没有该字段时回退到错误文字判定。
+ */
+export function isInconclusiveProbeError(error: {
+  readonly message: string;
+  readonly code?: string;
+}): boolean {
+  if (error.code === "inconclusive") return true;
+  if (error.code !== undefined) return false;
+  return isInconclusiveProbeMessage(error.message);
 }
 
 export function normalizeModelIds(ids: readonly string[]): string[] {
@@ -57,16 +82,31 @@ export async function probeAndSyncModel({
   }
   // 临时检测不拥有成员；关闭后的迟到响应或被其他入口删除的旧成员都不能再写配置。
   if (signal.aborted || (wasConfigured && !isConfigured())) return { id, success: false };
-  try {
-    if (isConfigured()) await setEnabled(result.success);
-    else if (result.success) await add();
-  } catch (error) {
-    return { id, success: false, stage: "save", message: errorMessage(error) };
+  if (result.success) {
+    try {
+      if (isConfigured()) await setEnabled(true);
+      else await add();
+    } catch (error) {
+      return { id, success: false, stage: "save", message: errorMessage(error) };
+    }
+    return { id, success: true };
+  }
+  // 取消/超时只说明这次没测出结论，不是模型不可用。用它禁用已配置模型，
+  // 会让并发排队中的模型成批从选择器消失，表现为“选模型时列表空了”。
+  const inconclusive = isInconclusiveProbeError(result.error);
+  if (!inconclusive) {
+    try {
+      if (isConfigured()) await setEnabled(false);
+    } catch (error) {
+      return { id, success: false, stage: "save", message: errorMessage(error) };
+    }
   }
   return {
     id,
-    success: result.success,
-    ...(result.success ? {} : { stage: "probe", message: result.error?.message }),
+    success: false,
+    stage: "probe",
+    message: result.error.message,
+    ...(inconclusive ? { inconclusive: true } : {}),
   };
 }
 

@@ -2812,6 +2812,7 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.syncModelsSelection": "Selected {selected}/{total}",
   "settings.modelProvider.syncModelsChecking": "Checking",
   "settings.modelProvider.syncModelsFailed": "Check failed",
+  "settings.modelProvider.syncModelsInconclusive": "Timed out, state kept",
   "settings.modelProvider.syncModelsSaveFailed": "Save failed",
   "settings.modelProvider.syncModelsProbeSuccess": "Verified and enabled",
   "settings.modelProvider.syncModelsEmpty": "The provider returned no models.",
