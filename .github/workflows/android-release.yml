@@ -30,6 +30,9 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-24.04
+    permissions:
+      # 创建 Release 需要写权限；签名密钥仍只来自 Secrets，不因该权限暴露。
+      contents: write
     timeout-minutes: 60
     env:
       NODE_OPTIONS: --max-old-space-size=6144
@@ -105,7 +108,9 @@ jobs:
         run: |
           apk="$(ls apps/android/app/build/outputs/apk/release/*.apk | head -1)"
           test -n "$apk"
-          apksigner verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
+          apksigner_bin="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)"
+          test -x "$apksigner_bin"
+          "$apksigner_bin" verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
           ! grep -qi "CN=Android Debug" "$RUNNER_TEMP/certs.txt"
           cp "$apk" "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk"
           sha256sum "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk" > "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk.sha256"

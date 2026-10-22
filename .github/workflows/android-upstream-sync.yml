@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository != 'lemon-casino/LemonCode'
+    # 仅在本仓库运行；公开后 fork 不继承定时任务，也不会消耗本仓库额度之外的成本。
+    if: github.repository == 'johnson020202/LemonCode-Android'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
