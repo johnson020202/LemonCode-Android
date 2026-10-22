@@ -61,6 +61,19 @@
                 android:text="@string/reconnect"
                 android:enabled="false" />
             <Button
+                android:id="@+id/check_update"
+                style="@style/Button.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/check_update" />
+            <TextView
+                android:id="@+id/update_status"
+                style="@style/Text.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/update_idle"
+                android:accessibilityLiveRegion="polite" />
+            <Button
                 android:id="@+id/forget"
                 style="@style/Button.LemonCode"
                 android:layout_width="match_parent"

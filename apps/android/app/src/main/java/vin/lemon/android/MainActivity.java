@@ -109,7 +109,81 @@ public final class MainActivity extends Activity {
         reconnectButton.setOnClickListener(view -> launchRuntime());
         findViewById(R.id.forget).setOnClickListener(view -> confirmReset());
         version.setText(getString(R.string.version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
+        findViewById(R.id.check_update).setOnClickListener(view -> checkForUpdates(true));
         startRuntime();
+        // 启动后静默检查一次；只有真正发现新版本才提示，不打断使用。
+        checkForUpdates(false);
+    }
+
+    /**
+     * 应用内升级入口。manual=false 时静默检查：无更新或失败都不打扰用户；
+     * 有更新才弹出下载确认，下载完成后由系统安装器要求用户确认。
+     */
+    private void checkForUpdates(boolean manual) {
+        final TextView updateStatus = findViewById(R.id.update_status);
+        if (manual) updateStatus.setText(R.string.update_checking);
+        Updater.check(this, new Updater.Callback() {
+            @Override public void onStatus(String message) {
+                updateStatus.setText(message);
+            }
+
+            @Override public void onChecked(Updater.Release release) {
+                String current = Updater.currentVersion(MainActivity.this);
+                if (!AppVersion.isNewer(release.version, current)) {
+                    updateStatus.setText(getString(R.string.update_latest, current));
+                    if (manual) toast(getString(R.string.update_latest, current));
+                    return;
+                }
+                updateStatus.setText(getString(R.string.update_available, release.version, current));
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle(getString(R.string.update_available, release.version, current))
+                        .setMessage(release.notes.trim().isEmpty()
+                                ? getString(R.string.update_install) : release.notes.trim())
+                        .setNegativeButton(R.string.update_later, null)
+                        .setPositiveButton(R.string.update_install,
+                                (dialog, which) -> downloadUpdate(release))
+                        .show();
+            }
+
+            @Override public void onError(String message) {
+                updateStatus.setText(getString(R.string.update_failed, message));
+                if (manual) toast(message);
+            }
+
+            @Override public void onDownloaded(java.io.File apk) {
+                updateStatus.setText(R.string.update_idle);
+                Updater.install(MainActivity.this, apk);
+            }
+        });
+    }
+
+    private void downloadUpdate(Updater.Release release) {
+        final TextView updateStatus = findViewById(R.id.update_status);
+        showPrompt(new AlertDialog.Builder(this)
+                .setTitle(R.string.update_install)
+                .setMessage(getString(R.string.update_available, release.version,
+                        Updater.currentVersion(this)))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.update_install, (dialog, which) ->
+                        Updater.download(this, release, new Updater.Callback() {
+                            @Override public void onStatus(String message) {
+                                updateStatus.setText(message);
+                            }
+
+                            @Override public void onChecked(Updater.Release ignored) {
+                                // 下载阶段不重复检查。
+                            }
+
+                            @Override public void onError(String message) {
+                                updateStatus.setText(getString(R.string.update_failed, message));
+                                toast(message);
+                            }
+
+                            @Override public void onDownloaded(java.io.File apk) {
+                                updateStatus.setText(R.string.update_idle);
+                                Updater.install(MainActivity.this, apk);
+                            }
+                        })));
     }
 
     private void startRuntime() {
@@ -511,6 +585,10 @@ public final class MainActivity extends Activity {
     }
 
     private void toast(int message) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 

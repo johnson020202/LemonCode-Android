@@ -120,3 +120,29 @@ test("agent runs as node with provider paths, never as an executable script", as
   const packager = await readFile(resolve(root, "scripts/android/package-runtime.mjs"), "utf8");
   assert.doesNotMatch(packager, /agent-wrapper\.sh/u);
 });
+
+test("in-app updater ships safe versioning, checksums and FileProvider install", async () => {
+  const updater = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/Updater.java"),
+    "utf8",
+  );
+  // 必须校验发布摘要，且只接受本仓库 HTTPS 资产域名。
+  assert.ok(updater.includes("SHA-256"));
+  assert.ok(updater.includes("isTrustedReleaseUrl"));
+  // Android 7+ 不允许 file:// 安装 Intent。
+  assert.ok(updater.includes("FileProvider.getUriForFile"));
+  assert.doesNotMatch(updater, /Uri\.fromFile/);
+
+  const manifest = await readFile(
+    resolve(root, "apps/android/app/src/main/AndroidManifest.xml"),
+    "utf8",
+  );
+  assert.ok(manifest.includes("REQUEST_INSTALL_PACKAGES"));
+  assert.ok(manifest.includes("androidx.core.content.FileProvider"));
+
+  const version = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/AppVersion.java"),
+    "utf8",
+  );
+  assert.ok(version.includes("isNewer"), "numeric version compare, not string compare");
+});
