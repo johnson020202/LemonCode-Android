@@ -239,9 +239,17 @@ final class AndroidRuntime {
         builder.environment().put("PATH", new File(root, "usr/bin").getAbsolutePath() + ":/system/bin");
         builder.environment().put("LD_LIBRARY_PATH", new File(root, "usr/lib").getAbsolutePath());
         // Agent 由随包 Node 执行随包 lcode.cjs：会话、终端与工具都在本机运行，不依赖桌面 Host。
+        // 不能使用 .sh 包装器：Android 10+ 禁止从应用数据目录执行脚本（实测 spawn EACCES）。
+        // 因此直接把 node + lcode.cjs 作为命令，并把 Agent 需要的路径全部放进服务端环境，
+        // 由服务端派生 Agent 时继承（服务端以 ...process.env 为基底构建子进程环境）。
         builder.environment().put("LCODE_AGENT_SERVER_COMMAND", node.getAbsolutePath());
         builder.environment().put("LCODE_AGENT_SERVER_ARGS_JSON",
-                "[\"" + new File(root, "server/lcode.cjs").getAbsolutePath() + "\",\"app-server\",\"--stdio\"]");
+                "[\"" + new File(root, "server/lcode.cjs").getAbsolutePath()
+                        + "\",\"app-server\",\"--stdio\"]");
+        builder.environment().put("LCODE_BUILTIN_PROVIDER_CONFIG_FILE",
+                new File(root, "server/lcode-builtin.json").getAbsolutePath());
+        builder.environment().put("LCODE_PERSONAL_PROVIDER_CONFIG_FILE",
+                new File(home, ".lcode/v2/provider_config.json").getAbsolutePath());
         try {
             builder.start();
         } catch (IOException exception) {

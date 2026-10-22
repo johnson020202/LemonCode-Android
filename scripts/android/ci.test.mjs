@@ -105,3 +105,18 @@ test("runtime relinks native libraries on every launch so upgrades survive", asy
   assert.ok(runtime.includes("Os.lstat"));
   assert.doesNotMatch(runtime, /if \(target\.exists\(\)/u);
 });
+
+test("agent runs as node with provider paths, never as an executable script", async () => {
+  const runtime = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/AndroidRuntime.java"),
+    "utf8",
+  );
+  // Android 10+ 禁止从应用数据目录执行脚本，.sh 包装器会 spawn EACCES。
+  assert.match(runtime, /LCODE_AGENT_SERVER_COMMAND", node\.getAbsolutePath\(\)/u);
+  assert.ok(runtime.includes("app-server"), "agent args must include app-server");
+  assert.ok(runtime.includes("LCODE_BUILTIN_PROVIDER_CONFIG_FILE"));
+  assert.ok(runtime.includes("LCODE_PERSONAL_PROVIDER_CONFIG_FILE"));
+
+  const packager = await readFile(resolve(root, "scripts/android/package-runtime.mjs"), "utf8");
+  assert.doesNotMatch(packager, /agent-wrapper\.sh/u);
+});
