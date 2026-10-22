@@ -210,12 +210,20 @@ final class AndroidRuntime {
         // 端口由内核分配后回读日志，避免固定端口与同机其它实例冲突。
         File workspace = new File(context.getFilesDir(), "workspace");
         File home = new File(context.getFilesDir(), "home");
+        // 服务端的 LCODE_DATA_BASE_DIR；个人 provider 配置就在其 .lcode/v2 下。
+        File dataDir = new File(context.getFilesDir(), "data");
         File log = new File(context.getFilesDir(), "runtime.log");
         if (!workspace.isDirectory() && !workspace.mkdirs()) {
             throw new RuntimeStartException("Cannot create workspace");
         }
         if (!home.isDirectory() && !home.mkdirs()) {
             throw new RuntimeStartException("Cannot create runtime home");
+        }
+        // Agent 会在 TMPDIR 下创建 Unix socket（znr-*.sock）。目录不存在时
+        // listen 直接 EACCES，Agent 随即退出并表现为 stdout_closed。
+        File tmpDir = new File(home, "tmp");
+        if (!tmpDir.isDirectory() && !tmpDir.mkdirs()) {
+            throw new RuntimeStartException("Cannot create runtime temp directory");
         }
         ProcessBuilder builder = new ProcessBuilder(node.getAbsolutePath(), server.getAbsolutePath());
         builder.directory(root);
@@ -228,7 +236,7 @@ final class AndroidRuntime {
         builder.environment().put("LCODE_ANDROID_RUNTIME_ROOT", new File(root, "server").getAbsolutePath());
         builder.environment().put("LCODE_WEB_STATIC_ROOT", www.getAbsolutePath());
         builder.environment().put("LCODE_SERVER_WORKSPACE", workspace.getAbsolutePath());
-        builder.environment().put("LCODE_DATA_BASE_DIR", new File(context.getFilesDir(), "data").getAbsolutePath());
+        builder.environment().put("LCODE_DATA_BASE_DIR", dataDir.getAbsolutePath());
         // 运行时自带 CA 包（Termux ca-certificates）。Node 使用编译期内置根证书，
         // 在该 Android 运行时上会对真实证书报 UNABLE_TO_GET_ISSUER_CERT_LOCALLY。
         // 实测：单独设置 NODE_EXTRA_CA_CERTS 可正常握手；同时设置 SSL_CERT_FILE 反而失败。
@@ -248,8 +256,11 @@ final class AndroidRuntime {
                         + "\",\"app-server\",\"--stdio\"]");
         builder.environment().put("LCODE_BUILTIN_PROVIDER_CONFIG_FILE",
                 new File(root, "server/lcode-builtin.json").getAbsolutePath());
+        // 服务端把个人 provider 配置写在 LCODE_DATA_BASE_DIR/.lcode/v2 下，
+        // 而应用数据目录与 home 是两处；Agent 必须读到同一份文件，否则 providerCount=0，
+        // 模型检测会被 "当前没有可用的模型供应商和模型" 拒绝。
         builder.environment().put("LCODE_PERSONAL_PROVIDER_CONFIG_FILE",
-                new File(home, ".lcode/v2/provider_config.json").getAbsolutePath());
+                new File(dataDir, ".lcode/v2/provider_config.json").getAbsolutePath());
         try {
             builder.start();
         } catch (IOException exception) {
