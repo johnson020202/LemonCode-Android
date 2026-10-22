@@ -31,44 +31,11 @@
                 android:layout_marginTop="@dimen/space_small"
                 android:text="@string/preview_boundary" />
             <TextView
-                style="@style/Text.LemonCode.Secondary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_small"
-                android:text="@string/download_boundary" />
-            <TextView
-                style="@style/Text.LemonCode"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_standard"
-                android:labelFor="@id/pairing_input"
-                android:text="@string/pairing_label" />
-            <EditText
-                android:id="@+id/pairing_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="@dimen/touch_target"
-                android:textSize="@dimen/text_ui_base"
-                android:hint="@string/pairing_hint"
-                android:inputType="textUri|textNoSuggestions"
-                android:imeOptions="actionGo|flagNoPersonalizedLearning"
-                android:maxLength="8192"
-                android:singleLine="true"
-                android:saveEnabled="false"
-                android:freezesText="false"
-                android:importantForAutofill="no" />
-            <Button
-                android:id="@+id/connect"
-                style="@style/Button.LemonCode"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/connect"
-                android:enabled="false" />
-            <TextView
                 android:id="@+id/status"
                 style="@style/Text.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_standard"
                 android:text="@string/checking_bundle"
                 android:accessibilityLiveRegion="polite" />
             <TextView
@@ -76,8 +43,16 @@
                 style="@style/Text.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_standard"
+                android:layout_marginTop="@dimen/space_small"
                 android:text="@string/no_previous" />
+            <Button
+                android:id="@+id/connect"
+                style="@style/Button.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_standard"
+                android:text="@string/connect"
+                android:enabled="false" />
             <Button
                 android:id="@+id/reconnect"
                 style="@style/Button.LemonCode"
@@ -92,11 +67,17 @@
                 android:layout_height="wrap_content"
                 android:text="@string/forget" />
             <TextView
+                style="@style/Text.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_standard"
+                android:text="@string/download_boundary" />
+            <TextView
                 android:id="@+id/version"
                 style="@style/Text.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_standard" />
+                android:layout_marginTop="@dimen/space_small" />
         </LinearLayout>
     </ScrollView>
 
@@ -126,12 +107,6 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_small" />
         </LinearLayout>
-        <TextView
-            style="@style/Text.LemonCode.Secondary"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="@dimen/space_standard"
-            android:text="@string/download_boundary" />
         <ProgressBar
             android:id="@+id/load_progress"
             style="?android:attr/progressBarStyleHorizontal"

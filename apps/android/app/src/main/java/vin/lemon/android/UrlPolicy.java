@@ -20,6 +20,45 @@ public final class UrlPolicy {
 
     public enum Navigation { IN_APP, EXTERNAL_HTTPS, BLOCK }
 
+    /** 本机运行时只监听回环地址；导航与资源解析都按该精确 origin 判断。 */
+    public static final class LocalOrigin {
+        private final int port;
+
+        public LocalOrigin(int port) {
+            if (port < 1024 || port > 65535) throw new IllegalArgumentException("Invalid local port");
+            this.port = port;
+        }
+
+        public int port() { return port; }
+        public String origin() { return "http://127.0.0.1:" + port; }
+        public String launchUrl() { return origin() + "/"; }
+
+        public boolean allows(String value) {
+            if (value == null || value.isEmpty() || value.length() > MAX_URL_LENGTH) return false;
+            try {
+                URI uri = new URI(value);
+                if (!"http".equalsIgnoreCase(uri.getScheme()) || uri.isOpaque()) return false;
+                if (uri.getRawUserInfo() != null || uri.getFragment() != null) return false;
+                return "127.0.0.1".equals(uri.getHost()) && uri.getPort() == port
+                        && uri.getRawPath() != null && uri.getRawPath().startsWith("/");
+            } catch (URISyntaxException exception) {
+                return false;
+            }
+        }
+    }
+
+    public static Navigation localNavigation(LocalOrigin origin, String value) {
+        if (origin == null) return Navigation.BLOCK;
+        if (origin.allows(value)) return Navigation.IN_APP;
+        try {
+            URI uri = new URI(value);
+            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
+                    ? Navigation.EXTERNAL_HTTPS : Navigation.BLOCK;
+        } catch (URISyntaxException exception) {
+            return Navigation.BLOCK;
+        }
+    }
+
     public static final class PairingLink {
         private final String host;
         private final String roomId;

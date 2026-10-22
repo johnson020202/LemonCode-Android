@@ -59,7 +59,13 @@ export async function stageAssets(root, metadata) {
   await writeFile(
     join(assets, "android-build.json"),
     JSON.stringify(
-      { ...metadata, mode: "remote-host-preview", fullFeatureParity: false },
+      {
+        ...metadata,
+        // 独立运行：本机 Node 运行时执行服务端与 Agent，不连接桌面 Host。
+        mode: "standalone-android",
+        standalone: true,
+        fullFeatureParity: false,
+      },
       null,
       2,
     ) + "\n",

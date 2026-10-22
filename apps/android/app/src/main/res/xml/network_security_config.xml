@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- 本地运行时在手机内监听回环地址，只有该地址允许明文 HTTP；
+         其余域名仍强制 HTTPS。 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />

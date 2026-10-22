@@ -72,14 +72,24 @@ export function createRuntimeEnvironmentHost(
     events.fire(event);
     options.publishInvalidation?.(event);
   });
-  const backend = createToolBackend({
-    dataDir,
-    backendPath:
-      options.backendPath ??
-      bundledMisePath({
+  // 修复：Android 等无桌面 mise 发行包的平台上，构造期解析路径会抛错，
+  // 使整个本地服务端无法启动，即使当前任务根本不需要受管工具链。
+  // 工具后端本来就在真正调用时才报告不可用（requireBackendPath），这里保持一致：
+  // 定位不到随包 mise 时传入 undefined，由调用点返回既有 capability-unavailable 错误。
+  const resolvedBackendPath = (() => {
+    if (options.backendPath) return options.backendPath;
+    try {
+      return bundledMisePath({
         resourcesPath: options.resourcesPath,
         serverRuntimeRoot: options.serverRuntimeRoot,
-      }),
+      });
+    } catch {
+      return undefined;
+    }
+  })();
+  const backend = createToolBackend({
+    dataDir,
+    backendPath: resolvedBackendPath,
     resolveEnv: options.resolveEnv,
   });
   const resources = createRuntimeResources(dataDir);

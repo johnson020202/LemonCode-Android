@@ -26,7 +26,8 @@ test("packages exact shared assets without maps and includes truthful metadata/l
     assert.equal(await readFile(join(target, "legal/LICENSE"), "utf8"), "LICENSE");
     const metadata = JSON.parse(await readFile(join(target, "../android-build.json"), "utf8"));
     assert.equal(metadata.fullFeatureParity, false);
-    assert.equal(metadata.mode, "remote-host-preview");
+    assert.equal(metadata.standalone, true);
+    assert.equal(metadata.mode, "standalone-android");
     await writeFile(join(target, "stale.js"), "old");
     await stageAssets(root, {});
     await assert.rejects(readFile(join(target, "stale.js")), { code: "ENOENT" });

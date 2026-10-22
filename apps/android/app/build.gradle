@@ -32,6 +32,12 @@ android {
     buildFeatures {
         buildConfig true
     }
+    // 运行时以 lib*.so 随 APK 分发；Android 只允许从 nativeLibraryDir 执行随包二进制。
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -68,9 +74,13 @@ def verifyReleaseInputs = tasks.register('verifyReleaseInputs') {
         if (!signingReady) {
             throw new GradleException('Release disabled: provide all four ANDROID_KEYSTORE_* / ANDROID_KEY_* signing variables and a readable existing keystore. No signing key is generated.')
         }
-        if (!file('src/main/assets/www/index.html').isFile()
-                || !file('src/main/assets/android-build.json').isFile()) {
-            throw new GradleException('Release disabled: generate the real shared Web assets and android-build.json first.')
+        for (String required : ['src/main/assets/runtime/runtime-manifest.json',
+                                'src/main/assets/runtime/runtime-payload.tar',
+                                'src/main/assets/www/index.html',
+                                'src/main/assets/android-build.json']) {
+            if (!file(required).isFile()) {
+                throw new GradleException("Release disabled: missing ${required}; run the Android packaging scripts first.")
+            }
         }
     }
 }

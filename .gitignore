@@ -6,6 +6,8 @@ dist/
 /apps/android/.gradle/
 /apps/android/**/build/
 /apps/android/local.properties
+/apps/android/app/src/main/jniLibs/
+/apps/android/app/src/main/assets/runtime/
 /apps/android/app/src/main/assets/www/
 /apps/android/app/src/main/assets/android-build.json
 *.keystore
