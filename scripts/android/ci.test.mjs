@@ -82,7 +82,12 @@ test("runtime ships CA certificates and feeds them to server and agent", async (
     "utf8",
   );
   assert.ok(runtime.includes('put("NODE_EXTRA_CA_CERTS"'));
-  assert.ok(runtime.includes("httpProxyCaCertPath"), "agent only inherits CA via the setting");
+  // Agent 子进程会被 sanitizeLCodeRuntimeEnv 清掉 NODE_EXTRA_CA_CERTS，
+  // 必须改用上游显式通道 LCODE_AGENT_CA_CERT（不在清洗名单内）。
+  assert.ok(
+    runtime.includes('put("LCODE_AGENT_CA_CERT"'),
+    "agent must receive CA via LCODE_AGENT_CA_CERT",
+  );
   assert.doesNotMatch(runtime, /put\("SSL_CERT_FILE"/u);
 
   const fetchRuntime = await readFile(resolve(root, "scripts/android/fetch-runtime.mjs"), "utf8");
