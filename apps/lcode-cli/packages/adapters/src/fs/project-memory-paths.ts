@@ -45,6 +45,7 @@ async function checkDirectory(
   path: string,
   pins: MemoryRoot["pins"],
   create: boolean,
+  trustedPrefix?: string,
 ): Promise<void> {
   let info;
   try {
@@ -59,7 +60,17 @@ async function checkDirectory(
     }
     info = await lstat(path);
   }
-  if (info.isSymbolicLink() || !info.isDirectory() || !samePath(await realpath(path), path)) {
+  // 记忆根父目录之上的平台别名（/data/user/0）不拒绝：设备实测那一级是符号链接，
+  // 其下每一级都是普通目录。不能跟随它再 stat：HyperOS 对解析后的 /data/data/<pkg>
+  // 返回 EACCES，跟随一次就会让登记失败。这一级也不做 inode 锚点。
+  // 父目录及以内的链接仍是逃逸路径，照旧拒绝。
+  const platformAlias =
+    info.isSymbolicLink() &&
+    trustedPrefix !== undefined &&
+    path !== trustedPrefix &&
+    !contained(trustedPrefix, path);
+  if (platformAlias) return;
+  if (info.isSymbolicLink() || !info.isDirectory()) {
     throw memoryError(
       "invalid_path",
       path,
@@ -77,13 +88,13 @@ async function directoryChain(
   path: string,
   pins: MemoryRoot["pins"],
   create: boolean,
+  trustedPrefix?: string,
 ): Promise<void> {
   const root = parse(path).root;
-  await checkDirectory(root, pins, false);
   let current = root;
   for (const component of relative(root, path).split(sep).filter(Boolean)) {
     current = join(current, component);
-    await checkDirectory(current, pins, create);
+    await checkDirectory(current, pins, create, trustedPrefix);
   }
 }
 
@@ -103,20 +114,23 @@ export async function prepareMemoryRoot(rawRoot: string): Promise<MemoryRoot> {
     lockPath: join(stateDir, "writer"),
     pins: new Map<string, DirectoryIdentity>(),
   };
-  await directoryChain(rootDir, root.pins, true);
-  await directoryChain(stateDir, root.pins, true);
+  const trustedPrefix = dirname(rootDir);
+  await directoryChain(rootDir, root.pins, true, trustedPrefix);
+  await directoryChain(stateDir, root.pins, true, trustedPrefix);
   await assertMemoryRoot(root);
   return root;
 }
 
 export async function assertMemoryRoot(root: MemoryRoot): Promise<void> {
-  for (const path of root.pins.keys()) await checkDirectory(path, root.pins, false);
+  const trustedPrefix = dirname(root.rootDir);
+  for (const path of root.pins.keys())
+    await checkDirectory(path, root.pins, false, trustedPrefix);
 }
 
 export async function initializeMemoryDirectories(root: MemoryRoot): Promise<void> {
   for (const directory of ["journal", "preimages", "reviews", "staging"]) {
     await assertMemoryRoot(root);
-    await directoryChain(join(root.stateDir, directory), root.pins, true);
+    await directoryChain(join(root.stateDir, directory), root.pins, true, dirname(root.rootDir));
   }
 }
 
@@ -156,10 +170,10 @@ export async function checkMemoryTarget(
   memoryRelativePath(root, path);
   await assertMemoryRoot(root);
   // 目标的子目录只属于本次路径验证；删除旧记忆目录不应污染 root/state 的长期身份锚点。
-  await directoryChain(dirname(path), new Map(root.pins), createParents);
+  await directoryChain(dirname(path), new Map(root.pins), createParents, dirname(root.rootDir));
   try {
     const info = await lstat(path);
-    if (info.isSymbolicLink() || !info.isFile() || !samePath(await realpath(path), path)) {
+    if (info.isSymbolicLink() || !info.isFile()) {
       throw memoryError(
         "invalid_path",
         path,
@@ -177,12 +191,46 @@ export async function checkLockPath(root: MemoryRoot): Promise<void> {
   const lock = `${root.lockPath}.lock`;
   try {
     const info = await lstat(lock);
-    if (info.isSymbolicLink() || !info.isDirectory() || !samePath(await realpath(lock), lock)) {
+    if (info.isSymbolicLink() || !info.isDirectory()) {
       throw memoryError("invalid_path", lock, "Project Memory lock must not be redirected");
     }
   } catch (error) {
     if (getNodeErrorCode(error) !== "ENOENT") throw error;
   }
+}
+
+/**
+ * 把物理路径里、记忆根父目录之上的平台别名换回登记拼写。
+ *
+ * <p>登记路径是 {@code /data/user/0/.../memory}，realpath 得到 {@code /data/data/.../memory}。
+ * 两者从记忆根的父目录开始逐级同名，只是更上层的祖先被换成了别名。父目录之内出现的链接
+ * （记忆根自己、root-alias、内部 junction）名字对不上，不能剥，仍由 samePath 拒绝。
+ * 不在这里跟随链接：HyperOS 上 stat {@code /data/data/<pkg>} 会 EACCES，只按路径分量换回登记拼写。
+ */
+function stripPlatformAlias(path: string, physical: string, roots: readonly MemoryRoot[]): string {
+  for (const root of roots) {
+    const owner = dirname(root.rootDir);
+    if (!contained(owner, path) && path !== owner) continue;
+    let lexical = path;
+    let resolved = physical;
+    while (lexical !== owner && dirname(lexical) !== lexical && dirname(resolved) !== resolved) {
+      lexical = dirname(lexical);
+      resolved = dirname(resolved);
+    }
+    if (lexical !== owner) continue;
+    while (dirname(lexical) !== lexical && dirname(resolved) !== resolved) {
+      const nextLexical = dirname(lexical);
+      const nextResolved = dirname(resolved);
+      if (relative(nextLexical, lexical) !== relative(nextResolved, resolved)) break;
+      lexical = nextLexical;
+      resolved = nextResolved;
+    }
+    if (dirname(lexical) === lexical || dirname(resolved) === resolved) continue;
+    const above = dirname(resolved);
+    if (above === resolved || contained(owner, dirname(lexical)) || dirname(lexical) === owner) continue;
+    return join(lexical, relative(resolved, physical));
+  }
+  return physical;
 }
 
 async function existingRealPath(path: string): Promise<string> {
@@ -201,6 +249,7 @@ async function existingRealPath(path: string): Promise<string> {
     }
   }
 }
+
 
 export class MemoryRootRegistry {
   readonly roots = new Map<string, MemoryRoot>();
@@ -266,7 +315,10 @@ export class MemoryRootRegistry {
         throw memoryError("invalid_path", path, "Project Memory path aliases are not writable");
       }
     }
-    const physical = await existingRealPath(path);
+    // 物理路径只用来发现“链接落进了已登记根”。比较前先剥掉记忆根之上的平台别名：
+    // /data/user/0 与 /data/data 指向同一目录，不能把这条祖先链接当成写入逃逸。
+    // 记忆根自身或其内部的链接不在前缀里，剥不掉，仍然拒绝。
+    const physical = stripPlatformAlias(path, await existingRealPath(path), roots);
     if (roots.some((root) => contained(root.stateDir, physical))) {
       throw memoryError(
         "invalid_path",

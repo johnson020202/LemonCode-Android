@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
@@ -126,7 +127,7 @@ test("root, root ancestors, target parents and state junction swaps fail closed"
   );
   await rename(stateDir, `${stateDir}-original`);
   await symlink(outside, stateDir, process.platform === "win32" ? "junction" : "dir");
-  await assert.rejects(memory.listChanges(rootDir), hasCode("invalid_path"));
+  await assert.rejects(memory.listChanges(rootDir), hasCode("invalid_path"), "rejection 5");
   await assert.rejects(
     adapter.writeTextFile({ path: join(rootDir, "ordinary.txt"), content: "must fail closed" }),
     hasCode("invalid_path"),
@@ -144,6 +145,32 @@ test("root, root ancestors, target parents and state junction swaps fail closed"
     hasCode("invalid_path"),
   );
   assert.equal(await readFile(join(outside, "fact.md"), "utf8"), "external");
+});
+
+test("an ancestor directory alias does not reject a memory root that is not itself a link", async (t) => {
+  const base = await mkdtemp(join(await realpath(tmpdir()), "lcode-alias-memory-"));
+  const wrapper = `${base}-platform`;
+  t.after(async () => {
+    await rm(base, { force: true, recursive: true });
+    await rm(wrapper, { force: true, recursive: true });
+  });
+  await mkdir(wrapper);
+  await rename(base, join(wrapper, "real"));
+  await symlink("real", join(wrapper, "alias"), process.platform === "win32" ? "junction" : "dir");
+  // 设备实测：链接在 /data/user/0，记忆根在其下两级以上的普通目录。
+  // 父目录本身是链接的形状属于 root-alias 逃逸，不在这里放行。
+  const rootDir = join(wrapper, "alias", "owner", "project");
+  await mkdir(rootDir, { recursive: true });
+  const root = await prepareMemoryRoot(rootDir);
+  assert.equal(root.rootDir, rootDir);
+  const adapter = new NodeFileSystemAdapter();
+  await adapter.projectMemory!.registerRoot(rootDir);
+  await adapter.writeTextFile({
+    path: join(rootDir, "fact.md"),
+    content: "kept",
+    expectedMissing: true,
+  });
+  assert.equal(await readFile(join(wrapper, "real", "owner", "project", "fact.md"), "utf8"), "kept");
 });
 
 test("a parent directory replaced after registration cannot redirect the sidecar", async (t) => {

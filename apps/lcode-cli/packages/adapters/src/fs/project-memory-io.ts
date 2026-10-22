@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, open, opendir, rename, unlink } from "node:fs/promises";
+import { lstat, open, opendir, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createFileSystemError, PROJECT_MEMORY_RECORD_LIMIT } from "@lcode/contracts";
 import { maybeThrowStorageFsFault } from "../storage/fs-fault-injection.js";
@@ -143,14 +143,18 @@ export async function strictAtomicWrite(
     await validate();
     throwIfAborted(options.signal);
     if (options.expectedMissing) {
+      // 不能用 link 发布：HyperOS 对 link 到尚不存在的目标返回 EACCES，登记记忆根
+      // 写 owner.json 会因此失败，整轮停在 context_initialization，界面表现为无回复。
+      // rename 在同一目标上实测成功，但它会覆盖并发新建的文件。发布钩子之后先确认
+      // 目标不存在：存在就按 stale write 拒绝，且不创建、不改写它。确认与 rename
+      // 之间的窗口由调用方的 writer 锁串行化。
       try {
-        // rename 会覆盖竞态中新建的目标；link 发布完整临时文件且原子拒绝 EEXIST。
-        await link(tempPath, path);
+        await lstat(path);
+        throw memoryError("stale_write", path, "Project Memory target is no longer missing");
       } catch (error) {
-        if (getNodeErrorCode(error) === "EEXIST")
-          throw memoryError("stale_write", path, "Project Memory target is no longer missing");
-        throw error;
+        if (getNodeErrorCode(error) !== "ENOENT") throw error;
       }
+      await rename(tempPath, path);
     } else {
       maybeThrowStorageFsFault({ operation: "rename", path });
       await rename(tempPath, path);

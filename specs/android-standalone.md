@@ -30,6 +30,16 @@ Activity（唯一原生界面）
 - 启动时按 `runtime-manifest.json` 建立符号链接，使 ELF 的 SONAME 依赖可解析；manifest 摘要不匹配则整包重新解包。
 - 运行时不可用时，原生层显示失败原因（含服务端日志尾部），不静默回退到远程页面。
 
+## 应用私有目录的路径别名
+
+Android 应用私有目录同时存在两个名字：`/data/user/0/<pkg>` 与 `/data/data/<pkg>`，前者是指向后者的符号链接。HyperOS 上应用自身无权访问 `/data/data/<pkg>`（stat 返回 EACCES），但 Node 的 `realpath` 仍会解析出该别名。同一策略还拒绝把 `link` 用作创建新文件的发布方式：设备实测 `link(临时文件, 尚不存在的目标)` 返回 EACCES，而 `rename` 到同一目标成功。
+
+- **不变量**：Project Memory 只拒绝记忆根父目录及其内部的 symlink/junction。父目录之上的平台别名（设备实测只有 `/data/user/0` 是链接，其下每一级都是普通目录）必须放行；父目录自己被换成链接仍是逃逸路径，必须拒绝。判定只看这一级的 `lstat`，不拿整段 `realpath` 和原路径比较。
+- **发布**：新建文件的原子发布在 POSIX 上用 `rename`，不用 `link`。`rename` 会覆盖并发中新建的目标，所以发布钩子之后先 `lstat` 确认目标不存在，存在即按 stale write 拒绝且不改写；确认与 `rename` 之间的窗口由调用方的 writer 锁串行化。
+- **状态所有者**：路径合法性只由 `project-memory-paths` 判定；原生层不缓存、不改写记忆目录。
+- **失败语义**：检查失败仍在 `context_initialization` 阶段抛出，轮次不进入模型；不能因为平台别名或 `link` 被拒把一次正常发送变成无回复的空白轮次。
+- **边界**：inode 比较不能作为判定依据，平台别名那一级也不能跟随后再 stat：HyperOS 对解析后的 `/data/data/<pkg>` 返回 EACCES。
+
 ## 失败语义
 
 - 解包/链接/启动失败：回到首页显示错误，不黑屏、不加载远端替代客户端。
