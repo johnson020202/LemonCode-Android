@@ -65,13 +65,13 @@ jobs:
           pnpm architecture:check --changed
       - name: Mobile client contract tests
         run: node --test packages/web/test/pairingCredentialStore.test.mjs packages/web/test/pairingFrames.test.mjs packages/web/test/mirrorReconnect.test.mjs
+      - name: Set build version
+        run: |
+          node -e 'const fs=require("node:fs");const p=require("./package.json");const code=Math.floor(Date.now()/1000)-1704067200;fs.appendFileSync(process.env.GITHUB_ENV,`ANDROID_VERSION_NAME=${p.version}-android\nANDROID_VERSION_CODE=${code}\n`);'
       - name: Build standalone runtime inputs
         run: node scripts/android/build-standalone.mjs
       - name: Verify Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
-      - name: Set build version
-        run: |
-          node -e 'const fs=require("node:fs");const p=require("./package.json");const code=Math.floor(Date.now()/1000)-1704067200;fs.appendFileSync(process.env.GITHUB_ENV,`ANDROID_VERSION_NAME=${p.version}-android\nANDROID_VERSION_CODE=${code}\n`);'
       - name: Android unit tests, lint and APK
         working-directory: apps/android
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
