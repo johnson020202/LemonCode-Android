@@ -1,0 +1,64 @@
+name: Sync upstream for Android preview
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository != 'lemon-casino/LemonCode'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.merge.outputs.changed }}
+      source_ref: ${{ steps.merge.outputs.source_ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - name: Merge upstream without overwriting Android adaptations
+        id: merge
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git check-ref-format "refs/heads/$DEFAULT_BRANCH"
+          git fetch --no-tags https://github.com/lemon-casino/LemonCode.git main:refs/remotes/android-upstream/main
+          before=$(git rev-parse HEAD)
+          if git merge-base --is-ancestor refs/remotes/android-upstream/main HEAD; then
+            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git merge --no-edit refs/remotes/android-upstream/main; then
+            git diff --name-only --diff-filter=U
+            git merge --abort
+            printf 'Upstream merge conflicted; no push performed. Manual review required.\n' >&2
+            exit 1
+          fi
+          after=$(git rev-parse HEAD)
+          test "$before" != "$after"
+          git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+          printf 'changed=true\nsource_ref=%s\n' "$after" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/android-build.yml
+    with:
+      source_ref: ${{ needs.sync.outputs.source_ref }}

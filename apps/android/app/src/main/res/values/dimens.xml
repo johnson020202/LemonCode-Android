@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Native sp equivalents of DESIGN.md text-ui-* roles; never change Web root font size. -->
+    <dimen name="text_ui_xl">18sp</dimen>
+    <dimen name="text_ui_lg">16sp</dimen>
+    <dimen name="text_ui_base">14sp</dimen>
+    <dimen name="text_ui_caption">13sp</dimen>
+    <dimen name="text_ui_sm">12sp</dimen>
+    <dimen name="space_small">8dp</dimen>
+    <dimen name="space_standard">16dp</dimen>
+    <dimen name="touch_target">48dp</dimen>
+</resources>

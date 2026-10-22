@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preview_title">LemonCode Android Preview</string>
+    <string name="preview_boundary">共享 Web 远控预览版，不是独立 Android 运行时，也未验收全功能。需已授权的桌面端在线。</string>
+    <string name="pairing_label">桌面提供的 HTTPS 配对链接</string>
+    <string name="pairing_hint">https://example.invalid/p/roomId#c=capability</string>
+    <string name="connect">连接桌面</string>
+    <string name="reconnect">重新连接上次地址</string>
+    <string name="no_previous">尚无已确认的配对地址</string>
+    <string name="previous_address">上次地址（不保存一次性授权）\n%1$s</string>
+    <string name="checking_bundle">正在检查内置共享客户端…</string>
+    <string name="bundle_ready">仅在下方确认的域名使用内置共享客户端。</string>
+    <string name="bundle_missing">未找到完整内置客户端。请先生成真实 Web 产物并重新打包；不会下载远端页面替代。</string>
+    <string name="invalid_link">链接无效。仅接受 HTTPS 默认 443、无账号密码、合法 /p/roomId 及可选 #c= 授权。query 不会保留。</string>
+    <string name="trust_title">信任此远端并授予控制权限？</string>
+    <string name="trust_message">实际连接域名\n%1$s\n\n此远端将接收配对授权、设备凭据及控制请求，可能参与控制桌面会话。只信任你确认的桌面服务，陌生域名可能窃取控制权限。\n\n一次性 capability 不写入原生偏好。query 和未知 fragment 参数会丢弃。</string>
+    <string name="trust_accept">信任并连接</string>
+    <string name="cancel">取消</string>
+    <string name="home">返回首页</string>
+    <string name="download_unsupported">本预览版不支持下载或保存，文件未保存。请在桌面端操作。</string>
+    <string name="download_boundary">下载 / 保存未支持；Web 发起成功不代表已落盘。</string>
+    <string name="navigation_blocked">已阻止不安全或未支持的导航。</string>
+    <string name="external_title">在系统浏览器打开外部 HTTPS 链接？</string>
+    <string name="external_message">目标域名\n%1$s\n\n此页面不在当前配对范围内，将离开本容器。链接的 query / fragment（如有）也会交给浏览器；不确定来源请取消。</string>
+    <string name="external_open">打开浏览器</string>
+    <string name="external_unavailable">没有可处理此 HTTPS 链接的应用。</string>
+    <string name="popup_unsupported">新窗口未打开。本预览版不支持弹出窗口，请使用当前页面链接。</string>
+    <string name="connection_error">页面加载失败或导航被阻止。请检查 HTTPS 服务、网络与配对地址后重试；未忽略任何 TLS 错误。</string>
+    <string name="renderer_failed">WebView 进程已退出，已回首页。可重新连接上次无授权参数的地址。</string>
+    <string name="upload_unavailable">无法打开系统文件选择器，或此文件请求不受支持。</string>
+    <string name="upload_invalid">文件选择无效或超过 32 项，未上传任何文件。</string>
+    <string name="forget">清除本机配对数据</string>
+    <string name="forget_title">清除地址和 Web 设备凭据？</string>
+    <string name="forget_message">将清除本机配对地址、WebView Cookie 和同源存储。不会撤销桌面授权；撤销设备请在桌面端操作。</string>
+    <string name="forget_confirm">清除</string>
+    <string name="version">APK %1$s · code %2$d</string>
+    <string name="metadata_unavailable">构建元数据不可用</string>
+    <string name="metadata">共享客户端 %1$s\n上游 %2$s</string>
+</resources>

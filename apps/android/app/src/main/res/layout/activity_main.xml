@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background"
+    android:importantForAutofill="noExcludeDescendants">
+
+    <ScrollView
+        android:id="@+id/home_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="@dimen/space_standard"
+            android:orientation="vertical">
+            <TextView
+                style="@style/Text.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/text_ui_xl"
+                android:text="@string/preview_title"
+                android:accessibilityHeading="true" />
+            <TextView
+                style="@style/Text.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
+                android:text="@string/preview_boundary" />
+            <TextView
+                style="@style/Text.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
+                android:text="@string/download_boundary" />
+            <TextView
+                style="@style/Text.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_standard"
+                android:labelFor="@id/pairing_input"
+                android:text="@string/pairing_label" />
+            <EditText
+                android:id="@+id/pairing_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/touch_target"
+                android:textSize="@dimen/text_ui_base"
+                android:hint="@string/pairing_hint"
+                android:inputType="textUri|textNoSuggestions"
+                android:imeOptions="actionGo|flagNoPersonalizedLearning"
+                android:maxLength="8192"
+                android:singleLine="true"
+                android:saveEnabled="false"
+                android:freezesText="false"
+                android:importantForAutofill="no" />
+            <Button
+                android:id="@+id/connect"
+                style="@style/Button.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/connect"
+                android:enabled="false" />
+            <TextView
+                android:id="@+id/status"
+                style="@style/Text.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/checking_bundle"
+                android:accessibilityLiveRegion="polite" />
+            <TextView
+                android:id="@+id/previous_address"
+                style="@style/Text.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_standard"
+                android:text="@string/no_previous" />
+            <Button
+                android:id="@+id/reconnect"
+                style="@style/Button.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/reconnect"
+                android:enabled="false" />
+            <Button
+                android:id="@+id/forget"
+                style="@style/Button.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/forget" />
+            <TextView
+                android:id="@+id/version"
+                style="@style/Text.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_standard" />
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/web_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="@dimen/space_small"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/home_button"
+                style="@style/Button.LemonCode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/home" />
+            <TextView
+                android:id="@+id/current_origin"
+                style="@style/Text.LemonCode.Secondary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_small" />
+        </LinearLayout>
+        <TextView
+            style="@style/Text.LemonCode.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="@dimen/space_standard"
+            android:text="@string/download_boundary" />
+        <ProgressBar
+            android:id="@+id/load_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:indeterminate="false"
+            android:max="100" />
+        <FrameLayout
+            android:id="@+id/web_container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+</LinearLayout>

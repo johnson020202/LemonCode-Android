@@ -1,0 +1,9 @@
+.gradle/
+.gradle-user-home/
+local.properties
+**/build/
+.verification/
+app/src/main/assets/www/
+app/src/main/assets/android-build.json
+*.jks
+*.keystore

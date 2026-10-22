@@ -1,0 +1,81 @@
+name: Android shared-client preview
+
+on:
+  push:
+    branches: [main, "android/**"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.6
+          run_install: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Install locked frontend dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Identify upstream and guard reviewed contracts
+        run: |
+          git fetch --no-tags https://github.com/lemon-casino/LemonCode.git main:refs/remotes/android-upstream/main
+          node scripts/android/check-parity.mjs
+      - name: Check scripts, shared types and architecture
+        run: |
+          node --test scripts/android/*.test.mjs
+          pnpm typecheck
+          pnpm lint
+          pnpm architecture:check --changed
+      - name: Test mobile pairing contracts
+        run: node --test packages/web/test/pairingCredentialStore.test.mjs packages/web/test/pairingFrames.test.mjs packages/web/test/mirrorReconnect.test.mjs
+      - name: Set consistent preview version
+        run: |
+          node -e 'const fs = require("node:fs"); const p = require("./package.json"); const code = Math.floor(Date.now() / 1000) - 1704067200; fs.appendFileSync(process.env.GITHUB_ENV, `ANDROID_VERSION_NAME=${p.version}-android-preview\nANDROID_VERSION_CODE=${code}\n`);'
+      - name: Package the exact shared client
+        run: node scripts/android/build-web.mjs
+      - name: Verify Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+      - name: Test and build preview APK
+        working-directory: apps/android
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: LemonCode-Android-preview-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            apps/android/app/build/outputs/apk/debug/*.apk
+            apps/android/app/src/main/assets/android-build.json
+            apps/android/app/build/reports/tests/testDebugUnitTest/
+            apps/android/app/build/reports/lint-results-debug.html

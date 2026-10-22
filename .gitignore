@@ -1,5 +1,17 @@
 node_modules/
 dist/
+
+# Android toolchains, generated assets and signing material stay local.
+/.android-tools/
+/apps/android/.gradle/
+/apps/android/**/build/
+/apps/android/local.properties
+/apps/android/app/src/main/assets/www/
+/apps/android/app/src/main/assets/android-build.json
+*.keystore
+*.jks
+!/apps/android/app/src/test/
+!/apps/android/app/src/test/**
 # lcode-server-cli 发行包 staging 输出，本地组装产物不入库。
 dist-release/
 # macOS CI 按架构隔离 electron-builder 输出目录，这些仍是构建产物。
