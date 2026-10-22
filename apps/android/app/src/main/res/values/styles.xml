@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.LemonCode" parent="android:style/Theme.Material.Light.NoActionBar">
+    <!-- 深色主题下状态栏使用浅色图标；原生外壳与内嵌客户端保持一致。 -->
+    <style name="Theme.LemonCode" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">@color/primary</item>
         <item name="android:windowBackground">@color/background</item>
         <item name="android:textColorPrimary">@color/foreground</item>
         <item name="android:textColorSecondary">@color/foreground_subtle</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">@color/background</item>
-        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
     <style name="Text.LemonCode" parent="">

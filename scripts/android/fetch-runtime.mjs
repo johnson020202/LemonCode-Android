@@ -47,6 +47,8 @@ export const PACKAGES = [
   "termux-tools",
   "ripgrep",
   "diffutils",
+  // HTTPS 必需：缺少 CA 证书时 Node 的所有 TLS 请求都会失败，模型 API 无法连接。
+  "ca-certificates",
 ];
 
 /** 解析 apt 索引，返回 package → {version, filename, sha256}。 */

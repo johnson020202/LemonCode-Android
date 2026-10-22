@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Native semantic equivalents of Zai Light; the embedded client owns its full theme set. -->
-    <color name="background">#F8F8F8</color>
-    <color name="foreground">#0D0D0D</color>
-    <color name="foreground_subtle">#555555</color>
-    <color name="primary">#0D0D0D</color>
+    <!-- 内嵌客户端默认挂载深色主题，原生外壳沿用同一深色调，
+         避免顶部出现一条与内容割裂的浅色区域。 -->
+    <color name="background">#161616</color>
+    <color name="foreground">#FFFFFF</color>
+    <color name="foreground_subtle">#B8B8B8</color>
+    <color name="primary">#FFFFFF</color>
 </resources>

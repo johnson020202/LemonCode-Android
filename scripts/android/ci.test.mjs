@@ -74,3 +74,34 @@ test("runtime is launched in-app and never falls back to a remote host", async (
   // 独立运行版本不应再出现桌面配对深链。
   assert.doesNotMatch(runtime, /\/p\/room/iu);
 });
+
+test("runtime ships CA certificates and feeds them to server and agent", async () => {
+  // 回归：缺 CA 会让所有模型请求 TLS 失败；只设 SSL_CERT_FILE 无效，必须 NODE_EXTRA_CA_CERTS。
+  const runtime = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/AndroidRuntime.java"),
+    "utf8",
+  );
+  assert.ok(runtime.includes('put("NODE_EXTRA_CA_CERTS"'));
+  assert.ok(runtime.includes("httpProxyCaCertPath"), "agent only inherits CA via the setting");
+  assert.doesNotMatch(runtime, /put\("SSL_CERT_FILE"/u);
+
+  const fetchRuntime = await readFile(resolve(root, "scripts/android/fetch-runtime.mjs"), "utf8");
+  assert.ok(fetchRuntime.includes('"ca-certificates"'), "CA bundle must be a runtime package");
+
+  const packager = await readFile(
+    resolve(root, "scripts/android/build-runtime-package.mjs"),
+    "utf8",
+  );
+  assert.ok(packager.includes('"etc"'), "etc/ (tls/cert.pem) must be included in the payload");
+});
+
+test("runtime relinks native libraries on every launch so upgrades survive", async () => {
+  const runtime = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/AndroidRuntime.java"),
+    "utf8",
+  );
+  // 覆盖安装会更换 nativeLibraryDir，旧链接指向已删除目录；必须重建，且断链要用 lstat 检测。
+  assert.match(runtime, /if \(reusable\)[\s\S]{0,220}linkNativeLibraries/u);
+  assert.ok(runtime.includes("Os.lstat"));
+  assert.doesNotMatch(runtime, /if \(target\.exists\(\)/u);
+});

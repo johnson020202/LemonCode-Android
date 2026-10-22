@@ -59,8 +59,17 @@ export async function packageRuntimeForApk({ root = repoRoot } = {}) {
   await rm(dataRoot, { recursive: true, force: true });
   await mkdir(dataRoot, { recursive: true });
   for (const name of await readdir(usr)) {
-    if (name === "bin" || name === "lib") continue;
+    // bin/lib 以 jniLibs 分发；etc/libexec 单独放进 usr/ 下。
+    if (name === "bin" || name === "lib" || name === "etc" || name === "libexec") continue;
     await cp(join(usr, name), join(dataRoot, name), { recursive: true, dereference: true });
+  }
+  // 数据包结构必须与 AndroidRuntime 的读取路径一致：usr/etc、usr/libexec。
+  await mkdir(join(dataRoot, "usr"), { recursive: true });
+  for (const name of ["etc", "libexec"]) {
+    await cp(join(usr, name), join(dataRoot, "usr", name), {
+      recursive: true,
+      dereference: true,
+    }).catch(() => {});
   }
   const runtimeBundle = resolve(root, ".android-tools/runtime-bundle");
   await cp(runtimeBundle, join(dataRoot, "server"), { recursive: true });

@@ -37,13 +37,19 @@ final class AndroidRuntime {
 
     private AndroidRuntime() {}
 
-    /** 解包并准备运行时根目录；已准备且摘要一致时跳过重复解包。 */
+    /** 解包并准备运行时根目录；已准备且摘要一致时只重建链接。 */
     static File prepare(android.content.Context context) throws IOException {
         File root = new File(context.getFilesDir(), "runtime");
         String manifest = readAssetText(context.getAssets(), MANIFEST);
         String digest = requireField(manifest, "payloadSha256");
         File marker = new File(root, MARKER);
-        if (root.isDirectory() && marker.isFile() && digest.equals(readText(marker))) return root;
+        boolean reusable = root.isDirectory() && marker.isFile() && digest.equals(readText(marker));
+        if (reusable) {
+            // 覆盖安装会更换 nativeLibraryDir（路径含安装哈希），旧符号链接随即失效。
+            // 数据无需重解包，但链接必须按当前安装目录重建，否则运行时报 "bundle is incomplete"。
+            linkNativeLibraries(context, root, manifest);
+            return root;
+        }
         deleteRecursively(root);
         if (!root.mkdirs()) throw new IOException("Cannot create runtime directory");
         extractPayload(context.getAssets(), root);
@@ -83,7 +89,12 @@ final class AndroidRuntime {
             if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
                 throw new IOException("Cannot create runtime directory for " + link[0]);
             }
-            if (target.exists() && !target.delete()) throw new IOException("Cannot replace " + link[0]);
+            // 覆盖安装后旧链接指向已删除的安装目录：exists() 会跟随链接返回 false，
+            // 但目录项本身仍在，必须用 NOFOLLOW_LINKS 检测并删除，否则 symlink 报 EEXIST，
+            // 后续读取会沿断链得到 ENOENT。
+            if (linkExists(target) && !target.delete()) {
+                throw new IOException("Cannot replace runtime link " + link[0]);
+            }
             if (!symlink(source.getAbsolutePath(), target.getAbsolutePath())) {
                 copyFile(source, target);
             }
@@ -92,6 +103,16 @@ final class AndroidRuntime {
             if (link[0].startsWith("usr/bin/") && !target.canExecute()) {
                 throw new IOException("Packaged runtime binary is not executable: " + link[0]);
             }
+        }
+    }
+
+    /** 不跟随符号链接判断目录项是否存在（用于清理覆盖安装留下的断链）。 */
+    private static boolean linkExists(File file) {
+        try {
+            android.system.Os.lstat(file.getAbsolutePath());
+            return true;
+        } catch (Exception exception) {
+            return false;
         }
     }
 
@@ -208,6 +229,13 @@ final class AndroidRuntime {
         builder.environment().put("LCODE_WEB_STATIC_ROOT", www.getAbsolutePath());
         builder.environment().put("LCODE_SERVER_WORKSPACE", workspace.getAbsolutePath());
         builder.environment().put("LCODE_DATA_BASE_DIR", new File(context.getFilesDir(), "data").getAbsolutePath());
+        // 运行时自带 CA 包（Termux ca-certificates）。Node 使用编译期内置根证书，
+        // 在该 Android 运行时上会对真实证书报 UNABLE_TO_GET_ISSUER_CERT_LOCALLY。
+        // 实测：单独设置 NODE_EXTRA_CA_CERTS 可正常握手；同时设置 SSL_CERT_FILE 反而失败。
+        File certs = new File(root, "usr/etc/tls/cert.pem");
+        builder.environment().put("NODE_EXTRA_CA_CERTS", certs.getAbsolutePath());
+        // Agent 子进程会清洗环境，只保留受控的 CA 配置；通过上游设置项传递同一路径。
+        seedCaCertSetting(new File(home, ".lcode/v2/setting.json"), certs.getAbsolutePath());
         builder.environment().put("PATH", new File(root, "usr/bin").getAbsolutePath() + ":/system/bin");
         builder.environment().put("LD_LIBRARY_PATH", new File(root, "usr/lib").getAbsolutePath());
         // Agent 由随包 Node 执行随包 lcode.cjs：会话、终端与工具都在本机运行，不依赖桌面 Host。
@@ -222,6 +250,29 @@ final class AndroidRuntime {
         int port = waitForPort(log);
         awaitServer(port, log);
         return port;
+    }
+
+    /**
+     * 把运行时的 CA 路径写入设置的 httpProxyCaCertPath。
+     * Agent 子进程会清洗 NODE_* 环境，只有该受控设置才会以 NODE_EXTRA_CA_CERTS 传给它；
+     * 不写这个值，模型请求会在 Agent 内报 TLS 校验失败。
+     * 仅补该字段，保留用户其余设置与未知字段。
+     */
+    private static void seedCaCertSetting(File settingFile, String certPath) {
+        try {
+            if (!settingFile.isFile()) return;
+            String text = readText(settingFile);
+            org.json.JSONObject json = new org.json.JSONObject(text);
+            if (certPath.equals(json.optString("httpProxyCaCertPath", ""))) return;
+            json.put("httpProxyCaCertPath", certPath);
+            File parent = settingFile.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) return;
+            try (FileOutputStream output = new FileOutputStream(settingFile)) {
+                output.write(json.toString(2).getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Exception ignored) {
+            // 设置文件损坏时由应用自身重建；这里不阻断启动。
+        }
     }
 
     /** 从服务端启动日志中读取实际监听端口；这是上游已有的稳定输出格式。 */

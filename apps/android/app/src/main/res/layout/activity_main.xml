@@ -86,34 +86,16 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
+        android:background="@color/background"
         android:visibility="gone">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="@dimen/space_small"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <Button
-                android:id="@+id/home_button"
-                style="@style/Button.LemonCode"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/home" />
-            <TextView
-                android:id="@+id/current_origin"
-                style="@style/Text.LemonCode.Secondary"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_small" />
-        </LinearLayout>
         <ProgressBar
             android:id="@+id/load_progress"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="2dp"
             android:indeterminate="false"
-            android:max="100" />
+            android:max="100"
+            android:progressTint="@color/primary" />
         <FrameLayout
             android:id="@+id/web_container"
             android:layout_width="match_parent"

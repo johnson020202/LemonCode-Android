@@ -67,6 +67,8 @@ const BINARIES = [
 ];
 // 动态库：整目录保留，缺失任一 .so 都会让 node/git 在启动时失败。
 const LIB_DIRS = ["lib"];
+// etc 携带 CA 证书与 OpenSSL 配置；缺少它 Node 无法进行任何 HTTPS 请求。
+const EXTRA_DIRS = ["etc"];
 // git-core 是 git 的别名入口（大量硬链接到同一个二进制），APK 里只需主 git 可执行文件，
 // 保留整目录会让产物多出数百 MB 重复数据。
 const LIBEXEC_FILES = ["libexec/rmt"];
@@ -96,6 +98,11 @@ export async function buildAndroidRuntime({ root = repoRoot } = {}) {
     }
   }
   for (const dir of LIB_DIRS) {
+    await cp(join(source, dir), join(usr, dir), { recursive: true, dereference: true }).catch(
+      () => {},
+    );
+  }
+  for (const dir of EXTRA_DIRS) {
     await cp(join(source, dir), join(usr, dir), { recursive: true, dereference: true }).catch(
       () => {},
     );

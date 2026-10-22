@@ -107,7 +107,6 @@ public final class MainActivity extends Activity {
         }
         connectButton.setOnClickListener(view -> launchRuntime());
         reconnectButton.setOnClickListener(view -> launchRuntime());
-        findViewById(R.id.home_button).setOnClickListener(view -> showHome());
         findViewById(R.id.forget).setOnClickListener(view -> confirmReset());
         version.setText(getString(R.string.version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
         startRuntime();
@@ -300,7 +299,6 @@ public final class MainActivity extends Activity {
         webContainer.addView(view, new android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
-        ((TextView) findViewById(R.id.current_origin)).setText(origin.origin());
         homePanel.setVisibility(View.GONE);
         webPanel.setVisibility(View.VISIBLE);
         InputMethodManager input = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
