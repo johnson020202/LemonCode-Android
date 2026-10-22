@@ -42,4 +42,5 @@
     <string name="update_install">下载并安装</string>
     <string name="update_later">稍后</string>
     <string name="update_failed">更新失败：%1$s</string>
+    <string name="report_logs">上报诊断日志</string>
 </resources>

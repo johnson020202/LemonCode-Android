@@ -31,6 +31,9 @@ export const PACKAGES = [
   "libgmp",
   "less",
   "readline",
+  // bash 通过 libreadline 依赖 libncursesw；缺它时 bash 直接
+  // "CANNOT LINK EXECUTABLE"，Agent 的所有命令都会失败。
+  "ncurses",
   "libiconv",
   "libandroid-support",
   "libandroid-selinux",

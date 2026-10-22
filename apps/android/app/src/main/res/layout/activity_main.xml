@@ -74,6 +74,12 @@
                 android:text="@string/update_idle"
                 android:accessibilityLiveRegion="polite" />
             <Button
+                android:id="@+id/report_logs"
+                style="@style/Button.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_logs" />
+            <Button
                 android:id="@+id/forget"
                 style="@style/Button.LemonCode"
                 android:layout_width="match_parent"

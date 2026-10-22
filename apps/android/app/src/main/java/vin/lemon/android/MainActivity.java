@@ -110,6 +110,10 @@ public final class MainActivity extends Activity {
         findViewById(R.id.forget).setOnClickListener(view -> confirmReset());
         version.setText(getString(R.string.version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
         findViewById(R.id.check_update).setOnClickListener(view -> checkForUpdates(true));
+        findViewById(R.id.report_logs).setOnClickListener(view -> Diagnostics.prompt(
+                this,
+                new java.io.File(getFilesDir(), "runtime.log"),
+                agentLogFile()));
         startRuntime();
         // 启动后静默检查一次；只有真正发现新版本才提示，不打断使用。
         checkForUpdates(false);
@@ -184,6 +188,15 @@ public final class MainActivity extends Activity {
                                 Updater.install(MainActivity.this, apk);
                             }
                         })));
+    }
+
+    /** Agent 结构化日志；排障时最有价值，含 turn 与 model.request 事件。 */
+    private java.io.File agentLogFile() {
+        java.io.File dir = new java.io.File(getFilesDir(), "home/.lcode/cli/log");
+        java.io.File[] files = dir.listFiles((d, name) -> name.endsWith(".jsonl"));
+        if (files == null || files.length == 0) return new java.io.File(dir, "missing.jsonl");
+        java.util.Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        return files[0];
     }
 
     private void startRuntime() {

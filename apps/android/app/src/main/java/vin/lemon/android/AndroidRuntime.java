@@ -24,6 +24,8 @@ final class AndroidRuntime {
     private static final String PAYLOAD = "runtime/runtime-payload.tar";
     private static final String MARKER = ".runtime-digest";
     private static final long START_TIMEOUT_MILLIS = 120_000;
+    /** 固定本机端口：WebView 的 localStorage 按 origin 隔离，端口变化会重置客户端状态。 */
+    static final int PREFERRED_PORT = 31234;
 
     static final class RuntimeStartException extends Exception {
         RuntimeStartException(String message) {
@@ -231,8 +233,10 @@ final class AndroidRuntime {
         builder.redirectOutput(log);
         builder.environment().put("HOME", home.getAbsolutePath());
         builder.environment().put("TMPDIR", new File(home, "tmp").getAbsolutePath());
-        // 端口交给内核分配，启动后从上游打印的监听地址回读，避免同机冲突。
-        builder.environment().put("LCODE_SERVER_PORT", "0");
+        // 固定端口：WebView 按 origin 隔离存储，端口每次变化都会让会话草稿、
+        // 滚动位置、主题等 localStorage 状态整体丢失；固定后同一设备状态可延续。
+        // 端口被占用时回退到内核分配，保证仍能启动。
+        builder.environment().put("LCODE_SERVER_PORT", String.valueOf(PREFERRED_PORT));
         builder.environment().put("LCODE_ANDROID_RUNTIME_ROOT", new File(root, "server").getAbsolutePath());
         builder.environment().put("LCODE_WEB_STATIC_ROOT", www.getAbsolutePath());
         builder.environment().put("LCODE_SERVER_WORKSPACE", workspace.getAbsolutePath());
@@ -263,14 +267,37 @@ final class AndroidRuntime {
         // 模型检测会被 "当前没有可用的模型供应商和模型" 拒绝。
         builder.environment().put("LCODE_PERSONAL_PROVIDER_CONFIG_FILE",
                 new File(dataDir, ".lcode/v2/provider_config.json").getAbsolutePath());
+        Process process = startOnce(builder);
+        int port;
         try {
-            builder.start();
+            port = waitForPort(log);
+        } catch (RuntimeStartException preferredPortFailure) {
+            // 固定端口可能被同机其它实例占用；回退到内核分配，保证应用仍能启动。
+            // 代价是 origin 变化，前端 localStorage 状态会隔离一次。
+            killQuietly(process);
+            builder.environment().put("LCODE_SERVER_PORT", "0");
+            process = startOnce(builder);
+            port = waitForPort(log);
+        }
+        awaitServer(port, log);
+        return port;
+    }
+
+    private static Process startOnce(ProcessBuilder builder) throws RuntimeStartException {
+        try {
+            return builder.start();
         } catch (IOException exception) {
             throw new RuntimeStartException("Cannot start local runtime", exception);
         }
-        int port = waitForPort(log);
-        awaitServer(port, log);
-        return port;
+    }
+
+    private static void killQuietly(Process process) {
+        if (process == null) return;
+        try {
+            process.destroy();
+        } catch (RuntimeException ignored) {
+            // 进程可能已自行退出。
+        }
     }
 
     /** 从服务端启动日志中读取实际监听端口；这是上游已有的稳定输出格式。 */
