@@ -1,85 +1,50 @@
-# Android 开发与持续构建
+# Android 独立运行版：构建、验证与边界
 
-## 当前交付是什么
+## 现状
 
-这是 **LemonCode Android Preview 远控客户端**，复用上游 `packages/web` / `packages/ui` 的完整前端构建，连接现有桌面 Host。不是手机独立执行 Agent 的版本，也没有完成用户要求的“所有功能同步”验收。
+APK 内自带 Node 运行时、上游本地服务端、Agent 与共享 Web 客户端，在手机内独立执行，不需要电脑。已在 Android 15 arm64 模拟器上验证：应用解包运行时、启动本机服务端、WebView 加载真实界面（`127.0.0.1:<port>`）。
 
-工程：`apps/android`。技术：Java 17、AGP 8.9.2、Gradle 8.11.1，Android 8.0/API 26 起，目标 API 35。只声明 INTERNET 权限；上传通过系统文件选择器。
+**这仍不是“所有功能完全同步”的完成品。** 桌面 Electron 能力（内嵌浏览器、Computer Use）、文件下载、APK 自更新等尚未实现，列表见下。
+
+## 组件所有者
+
+- `apps/android`：唯一 Activity、运行时解包、符号链接、启动与停止、WebView 容器与 SAF 上传。
+- `scripts/android/`：可复现构建（Web → 服务端 bundle → Agent → Termux 运行时 → APK 资源）。
+- 运行时二进制来自 Termux 官方 apt 源，按 apt 索引逐包校验 SHA-256；不下载任意脚本执行。
+- 会话/任务事实由本机上游服务端与其 Agent 进程持有，不存在第二套状态。
 
 ## 本地构建
-
-需要 Node 24.21.0、pnpm 10.34.6、JDK 21、Android SDK platforms;android-35 / build-tools;35.0.0，设置 `JAVA_HOME` 与 `ANDROID_HOME`。
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
 export NODE_OPTIONS=--max-old-space-size=6144
-export ANDROID_VERSION_NAME=3.17.4-android-preview
-export ANDROID_VERSION_CODE=1
-node --test scripts/android/*.test.mjs
-node scripts/android/check-parity.mjs
-pnpm typecheck
-pnpm lint
-pnpm architecture:check --changed
-node scripts/android/build-web.mjs
-(cd apps/android && ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug)
+export ANDROID_HOME=<sdk> JAVA_HOME=<jdk21>
+node scripts/android/build-standalone.mjs
+(cd apps/android && ./gradlew testDebugUnitTest lintDebug assembleDebug)
+node scripts/android/verify-apk.mjs
 ```
 
-`--ignore-scripts` 是 Android 共享前端构建的限定安装方式，避免下载不使用的 Electron 和编译桌面原生模块；不是桌面开发的通用安装方式。共享前端实际生产构建必须继续成功。
+`build-standalone.mjs` 幂等：Web 产物、服务端 bundle、Agent CLI、Termux 包、精简运行时、jniLibs 与 assets 都会重建。生成目录（`.android-tools/`、`jniLibs/`、`assets/runtime/`、`assets/www/`）不入库。
 
-APK 输出：`apps/android/app/build/outputs/apk/debug/app-debug.apk`。生成资源、SDK、Gradle缓存和密钥不提交。脚本只清理标记为自身生成的资源目录，遇到未标记目录或符号链接拒绝覆盖。
+## 自动构建
 
-`build-web.mjs --stage-only` 只用于明确已有 Web 构建的本地检查，会在元数据标为 stageOnly；正式 CI 不使用该参数。实际使用步骤：安装 Preview APK，在电脑 LemonCode 开启远控，复制完整 HTTPS 配对链接到手机输入框，确认目标域名与电脑授权。电脑/执行宿主必须在线。
+- `.github/workflows/android-build.yml`：push main / PR / 手动触发；跑脚本测试、`pnpm typecheck`、`pnpm lint`、架构检查、移动端契约测试、独立运行时构建、Gradle 单测/lint/打包，并校验 APK 内容后上传 artifact。
+- `.github/workflows/android-upstream-sync.yml`：每 30 分钟检查上游 `lemon-casino/LemonCode` main，用普通 merge 保留 Android 适配，冲突即失败且不推送；成功后显式调用构建流程。
+- 轮询无法保证“每次上游 push 立即构建”；严格实时需上游仓库接入 workflow 或 webhook。
+- 当前仓库：`johnson020202/LemonCode-Android`（私有）。构建产物是 debug 包，未做正式签名与发布。
 
-## 自动更新行为
+## 已验证（2026-10-22）
 
-- `.github/workflows/android-build.yml`：main、android/** 分支 push、PR、手动运行或被同步流程调用时执行检查、Web 构建、Android 单测/lint/编译，上传 debug APK 和元数据为 Actions artifact。
-- `.github/workflows/android-upstream-sync.yml`：仅非原上游仓库运行，每小时第 17/47 分钟检查固定上游 main。自动合并到 fork 默认分支；冲突立即失败、终止合并且不推送，不做强制覆盖。成功后显式调用可复用构建流程，不依赖 GITHUB_TOKEN 推送触发另一个 push workflow。
-- **轮询不等于每个上游 push 立即触发**：GitHub schedule 可能延迟，也可能把多个提交合为一次 HEAD 构建。严格“每次更新立即构建”需要上游维护者把构建 workflow 放入原仓库，或配置授权 webhook/dispatch；不能在 fork 中假装能监听他人仓库的 push。
-- **当前没有推送/启用这些工作流，没有远程 Actions 运行证据。** 需要用户明确目标 GitHub 仓库并授权发布源代码，启用 Actions 和 workflow contents:write；受保护分支可能拒绝同步推送。
-- 同步合并不是功能验收。平台接口/配对/服务代理指纹变化会阻断构建；必须审阅变更、更新 Android 适配与用例后，才可显式运行 `node scripts/android/check-parity.mjs --record-reviewed-baseline` 并提交基线。普通业务变化仍需业务回归，指纹相同不代表所有功能相同。
+- 上游基线 `40851a3`，客户端 `3.17.4`。
+- `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`、`scripts/android` 10 项测试全部通过。
+- `./gradlew testDebugUnitTest lintDebug assembleDebug` 成功；JUnit 11 项通过；Android lint 0 错误。
+- `verify-apk.mjs`：110 个原生库与 manifest 链接一一对应，payload 摘要匹配，无 source map。
+- 模拟器实测：安装后自动解包，服务端监听 `127.0.0.1`，`/api/server-info` 返回本机工作区，WebView 加载真实 LCode 界面并进入引导页；截图与浏览器同页对比布局一致（之前的重叠是模拟器截屏伪影）。
+- 随包 Agent CLI 在应用沙箱内 `--version` 与 `app-server --stdio` 均可启动。
 
-## 签名与分发
+## 未验证 / 未实现
 
-CI 默认仅产生 debug artifact，不创建 GitHub Release、Play 商店版本或假正式签名。不同机器/runner 的 debug 证书可能不同，后续 debug APK 未必能覆盖安装；不要把卸载重装作为正式升级机制（会清除本机配对数据）。
-
-稳定更新必须由用户持有并备份长期 keystore，配置以下环境变量，再执行 `./gradlew assembleRelease`：
-
-- `ANDROID_KEYSTORE_PATH`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS`
-- `ANDROID_KEY_PASSWORD`
-
-无签名材料 release 任务失败，不自动生成替代密钥。本阶段未做正式签名、Release 发布或自动下载安装。签名凭据应使用 CI Secrets，不写仓库/日志/交接文件。
-
-## 功能对等状态
-
-| 类别 | 当前状态 |
-| --- | --- |
-| 共享界面、会话/模型设置、项目浏览、Git、终端 | 复用上游共享前端与远端服务；仍需要手机端端到端验收 |
-| Agent、MCP、插件、skills、hooks、工作流 | 在现有宿主执行，不是 Android 本机实现；不能据此保证全部入口在手机可用 |
-| HTTPS 配对、域名确认、凭据恢复 | 原生接入与策略单测；真实双向配对/WSS 待设备验证 |
-| 文件上传、返回键、键盘/系统栏 | 原生实现；真机行为未验收 |
-| 文件下载/保存 | 未实现；Web 的发起成功不能视为手机落盘成功 |
-| Electron 内嵌浏览器、Computer Use、Chrome 导入 | 未移植，不宣称可用 |
-| 手机本机 Node/PTY/SQLite、任意 stdio 插件 | 未实现，需用户先确定是否要求完全独立运行 |
-| 后台通知、OAuth/支付/分享深链、远程工作区创建 | 未完成对应 Android 适配与验收 |
-| 上游更新检测、构建配置 | 已编写，尚未在 GitHub 部署；不能称为已自动运行 |
-
-完整目标仍受运行方式、宿主连接、真实设备、远程发布授权和长期签名材料约束。不得把 Preview APK 交付描述为“所有功能同步已完成”。
-
-## 本次实际验证（2026-10-22）
-
-上游基线 `40851a32349ed4e233e5a5dd4578eb8e91d556a3`，客户端 `3.17.4`，本地分支 `android/shared-client`。改动未提交、未推送；构建元数据明确 `sourceDirty: true`。
-
-- `pnpm install --frozen-lockfile --ignore-scripts` 成功；首次普通安装因不需要的 Electron 下载未完成被终止，随后用限定前端安装方式完成。
-- Node 24.21.0 下 `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed` 通过。首次 typecheck 的默认 512 MB 堆耗尽，设置本进程 `NODE_OPTIONS=--max-old-space-size=6144` 后通过，未修改系统 Node 配置。
-- `pnpm test:android`：7 个测试通过。现有配对凭据、帧和重连测试：26 个通过。
-- `pnpm build:android:web`：完整共享 Web 生产构建成功。上游 Vite 有未来 configLoader 兼容性警告，不是构建失败。
-- `./gradlew testDebugUnitTest lintDebug assembleDebug`：成功；JUnit 11 个测试，0 失败；Android lint 0 错误、7 个非阻断警告（新版本属性兼容提示、布局/资源/国际化提示）。首次 lint 发现 API 26 误用 API 27 导航条属性，已通过资源和 SDK 条件分支修复，不使用忽略基线。
-- `:app:verifyReleaseInputs`：无签名材料时按设计失败，验证正式版不会回退临时签名。
-- `apksigner verify --verbose`：APK v2 签名通过，证书为 Android Debug。包名 `vin.lemon.android`，versionCode 1，minSDK 26、targetSDK 35，仅 INTERNET 权限。
-- 对 APK 中 3,809 个共享静态/许可文件逐个与暂存产物比较，全部相同；无 source map；metadata 为 `remote-host-preview`、`fullFeatureParity:false`、`stageOnly:false`。
-- APK：19,681,492 字节；SHA-256：`afac8330423e71877d79dc38b6e97532fc9a3df2e1f969eb9a4a18af6a1f8234`。
-- GitHub 工作流只做 YAML 解析和结构测试，未在 GitHub 运行。独立模型评审尝试受服务容量/配置错误阻塞，未取得独立评审结论。
-- `adb devices -l` 无设备；没有 Android 真机/模拟器安装、真实配对、上传、后台恢复的验证证据。上游 Web GUI E2E 与完整业务回归未执行，正式签名及自动升级未验收。
-
+- 真实模型对话（需要用户自己的模型凭据与网络条件）。
+- 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装、APK 自更新。
+- 正式签名、覆盖升级、低版本 Android（< 8.0）与 x86 设备。
+- 上游全部业务功能的逐项设备验收；不能据构建成功宣称“全功能同步”。
