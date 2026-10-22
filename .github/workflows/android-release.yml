@@ -68,12 +68,23 @@ jobs:
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             name="${GITHUB_REF_NAME#android-v}"
-            code="${name//./}"
+            # 不能简单去掉点："0.1.7" -> "017" 前导零不合法，Gradle 会拒绝。
+            # 按 major*10000 + minor*100 + patch 合成单调递增的整数（0.1.7 -> 107）。
+            code="$(printf '%s' "$name" | awk -F. '{
+              major=$1+0; minor=($2==""?0:$2+0); patch=($3==""?0:$3+0);
+              print major*10000 + minor*100 + patch
+            }')"
           else
             name="${INPUT_NAME}"
             code="${INPUT_CODE}"
           fi
           test -n "$name" && test -n "$code"
+          case "$code" in
+            0|[!0-9]*|*[!0-9]*)
+              echo "Resolved versionCode '$code' is not a positive integer" >&2
+              exit 1
+              ;;
+          esac
           printf 'name=%s\ncode=%s\n' "$name" "$code" >> "$GITHUB_OUTPUT"
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
