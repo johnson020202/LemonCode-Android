@@ -242,8 +242,10 @@ final class AndroidRuntime {
         // 实测：单独设置 NODE_EXTRA_CA_CERTS 可正常握手；同时设置 SSL_CERT_FILE 反而失败。
         File certs = new File(root, "usr/etc/tls/cert.pem");
         builder.environment().put("NODE_EXTRA_CA_CERTS", certs.getAbsolutePath());
-        // Agent 子进程会清洗环境，只保留受控的 CA 配置；通过上游设置项传递同一路径。
-        seedCaCertSetting(new File(home, ".lcode/v2/setting.json"), certs.getAbsolutePath());
+        // Agent 子进程会经 sanitizeLCodeRuntimeEnv 清掉 NODE_EXTRA_CA_CERTS/SSL_CERT_FILE，
+        // 因此必须用上游显式 CA 通道：LCODE_AGENT_CA_CERT 不在清洗名单内，
+        // Agent 侧 applyCaEnv 会用它设置自身的 CA 目标变量。
+        builder.environment().put("LCODE_AGENT_CA_CERT", certs.getAbsolutePath());
         builder.environment().put("PATH", new File(root, "usr/bin").getAbsolutePath() + ":/system/bin");
         builder.environment().put("LD_LIBRARY_PATH", new File(root, "usr/lib").getAbsolutePath());
         // Agent 由随包 Node 执行随包 lcode.cjs：会话、终端与工具都在本机运行，不依赖桌面 Host。
@@ -269,29 +271,6 @@ final class AndroidRuntime {
         int port = waitForPort(log);
         awaitServer(port, log);
         return port;
-    }
-
-    /**
-     * 把运行时的 CA 路径写入设置的 httpProxyCaCertPath。
-     * Agent 子进程会清洗 NODE_* 环境，只有该受控设置才会以 NODE_EXTRA_CA_CERTS 传给它；
-     * 不写这个值，模型请求会在 Agent 内报 TLS 校验失败。
-     * 仅补该字段，保留用户其余设置与未知字段。
-     */
-    private static void seedCaCertSetting(File settingFile, String certPath) {
-        try {
-            if (!settingFile.isFile()) return;
-            String text = readText(settingFile);
-            org.json.JSONObject json = new org.json.JSONObject(text);
-            if (certPath.equals(json.optString("httpProxyCaCertPath", ""))) return;
-            json.put("httpProxyCaCertPath", certPath);
-            File parent = settingFile.getParentFile();
-            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) return;
-            try (FileOutputStream output = new FileOutputStream(settingFile)) {
-                output.write(json.toString(2).getBytes(StandardCharsets.UTF_8));
-            }
-        } catch (Exception ignored) {
-            // 设置文件损坏时由应用自身重建；这里不阻断启动。
-        }
     }
 
     /** 从服务端启动日志中读取实际监听端口；这是上游已有的稳定输出格式。 */

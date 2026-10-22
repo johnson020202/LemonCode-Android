@@ -4565,7 +4565,12 @@ export function createLCodeAgentService(
     },
 
     async testModelConnectivity(params: LCodeAgentTestModelConnectivityParams) {
-      const client = await getClient(params);
+      // 修复：模型连通性探测只做一次性请求，不应要求"模型执行就绪"。
+      // 原实现走 getClient()，在 provider 尚无任何模型时抛 providerNotReady，
+      // 使"检测并添加第一个模型"永远失败（空 provider 无法自举）。
+      // 这里只确保 Agent runtime 存在，不置 modelExecutionEnabled，
+      // chat 等执行路径的门禁保持不变。
+      const client = await getReadOnlyClient(params);
       await ensureAccountProviderConfigSynced({
         client,
         reason: "provider_test_model_connectivity",
