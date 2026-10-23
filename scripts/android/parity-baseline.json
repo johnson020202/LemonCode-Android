@@ -5,7 +5,7 @@
   "meaning": "Contract drift guard only; not proof of feature parity or device acceptance.",
   "files": {
     "packages/shared/src/platform.ts": "491226611d50b935493232e62db624572b42e1c92b661bffe43786f12de4759c",
-    "packages/web/src/main.tsx": "d325aeae3239783a4549e091d66af477b415a7669d10c9635ff99100241dc16a",
+    "packages/web/src/main.tsx": "c165057c4f33b0631637dbee6458023d7303ca602f504f214edd0d622246de6d",
     "packages/web/src/remote/pairingDeepLink.ts": "4530a8535552fef47903beb3ff216cfc0e8ee6251b4b0d51471399af39c3b0b8",
     "packages/web/src/remote/pairingSockets.ts": "68b099e7b7e2dfb1939cc927f65fd2959881bc909597fb7827b3802078917011",
     "packages/web/src/saveWebFile.ts": "1bb4758e14d5e90f8eb9b1f2740ba47dc98abe63173eab1d5fb4a9e11975c827",

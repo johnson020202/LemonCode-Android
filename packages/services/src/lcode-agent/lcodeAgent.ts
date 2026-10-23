@@ -15,6 +15,9 @@ import type {
   LCodeSessionGoalAction,
   LCodeSessionGoalResult,
   LCodeMessageWithParts,
+  LCodeSessionImportDeviceSyncParams,
+  LCodeSessionImportDeviceSyncResult,
+  LCodeSessionSyncStartResult,
   ModelSelection,
   LCodeSessionImportHistory,
   LCodePermissionRequestParams,
@@ -600,6 +603,16 @@ export interface ILCodeAgentService {
   readSessionMessages(
     params: LCodeAgentReadSessionMessagesParams,
   ): Promise<LCodeMessageWithParts[]>;
+  /** 设备同步落库：把手机拉到的电脑快照写成当前工作区的新会话。 */
+  importDeviceSync(
+    params: LCodeAgentWorkspaceTarget & {
+      snapshot: LCodeSessionImportDeviceSyncParams["snapshot"];
+    },
+  ): Promise<LCodeSessionImportDeviceSyncResult>;
+  startDeviceSync(
+    params: LCodeAgentSessionTarget & { workspaceKey: string },
+  ): Promise<LCodeSessionSyncStartResult>;
+  stopDeviceSync(params: LCodeAgentSessionTarget): Promise<void>;
   readSessionDebug(params: LCodeAgentSessionTarget): Promise<SessionDebugSnapshot>;
   readSessionEvents(params: LCodeAgentReadSessionEventsParams): Promise<LCodeSessionEvent[]>;
   readWorkspacePresentation(

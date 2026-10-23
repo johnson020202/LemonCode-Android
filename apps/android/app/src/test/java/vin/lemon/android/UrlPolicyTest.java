@@ -36,6 +36,21 @@ public final class UrlPolicyTest {
         }
     }
 
+    @Test public void mirrorPairingLinksStayInTheWebView() {
+        assertEquals(UrlPolicy.Navigation.MIRROR,
+                UrlPolicy.localNavigation(LOCAL, "https://room.example.com/p/abc#c=token"));
+        assertTrue(UrlPolicy.isInApp(LOCAL, "https://room.example.com/p/abc#c=token"));
+        assertEquals(UrlPolicy.Navigation.EXTERNAL_HTTPS,
+                UrlPolicy.localNavigation(LOCAL, "https://example.com/p/"));
+        assertEquals(UrlPolicy.Navigation.EXTERNAL_HTTPS,
+                UrlPolicy.localNavigation(LOCAL, "https://example.com/docs"));
+        assertEquals(UrlPolicy.Navigation.BLOCK,
+                UrlPolicy.localNavigation(LOCAL, "https://user:pass@example.com/p/abc"));
+        assertEquals(UrlPolicy.Navigation.BLOCK,
+                UrlPolicy.localNavigation(LOCAL, "http://example.com/p/abc"));
+        assertFalse(UrlPolicy.isInApp(LOCAL, "https://example.com/docs"));
+    }
+
     @Test public void invalidPortsAndMissingOriginFailClosed() {
         for (int port : new int[]{0, -1, 65536, 100000}) {
             try {

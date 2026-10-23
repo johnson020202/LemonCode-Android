@@ -19,6 +19,7 @@ import type {
   FileDiff,
 } from "./session-store/session-records.js";
 import type {
+  DeviceSyncCommitBundle,
   ForkChildSessionMetadata,
   ForkCommitBundle,
   SharedContextImportCommitBundle,
@@ -78,6 +79,8 @@ export interface SessionStorePort {
   /** V4 stable/compact-edit fork 的唯一事务入口。legacy workspace fork 不调用。 */
   commitForkBundle?(bundle: ForkCommitBundle): Promise<SessionInfo>;
   commitSharedContextImportBundle?(bundle: SharedContextImportCommitBundle): Promise<SessionInfo>;
+  /** 设备同步的唯一事务入口：快照里的 ID 与执行路径由调用方重写后再传入。 */
+  commitDeviceSyncBundle?(bundle: DeviceSyncCommitBundle): Promise<SessionInfo>;
   transitionSharedContextImport?(input: SharedContextImportTransition): Promise<boolean>;
   updateSession(input: UpdateSessionInput): Promise<SessionInfo>;
   getSession(sessionID: SessionId): Promise<SessionInfo | null>;
@@ -354,6 +357,7 @@ export type {
   StableForkTargetMetadata,
   ForkChildSessionMetadata,
   ForkCommandResult,
+  DeviceSyncCommitBundle,
   ForkCommitBundle,
   SharedContextImportCommitBundle,
   SharedContextImportStatus,

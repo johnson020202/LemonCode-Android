@@ -54,6 +54,7 @@ import {
   lcodeSessionEventsParamsSchema,
   lcodeSessionForkParamsSchema,
   lcodeSessionGoalParamsSchema,
+  lcodeSessionImportDeviceSyncParamsSchema,
   lcodeSessionListParamsSchema,
   lcodeSessionMessagesParamsSchema,
   lcodeSessionReadParamsSchema,
@@ -94,6 +95,7 @@ import {
   resolveSessionContextUsage,
   shouldExposeSessionEventToProtocol,
 } from "./mapper.js";
+import { buildDeviceSyncBundle } from "./device-sync-import.js";
 import { optionalModelSelectionFromString } from "./model-mapper.js";
 import {
   ProtocolRequestError,
@@ -1958,6 +1960,67 @@ export async function readSessionContextUsage(
     persistedContextUsageBreakdownEvents: events,
     projection,
   });
+}
+
+/** 设备同步只读快照：返回 store 形状的消息，手机原样转发回来即可落库。 */
+export async function readDeviceSyncSnapshot(
+  context: LCodeProtocolAgentServerContext,
+  sessionId: string,
+): Promise<{ title: string; createdAt: number; updatedAt: number; messages: MessageWithParts[] }> {
+  const sessionStore = context.deps.sessionStore;
+  if (!sessionStore) {
+    throw new ProtocolRequestError(-32003, "Device sync requires session storage");
+  }
+  // 侧栏里没打开过的会话没有 runtime record。同步只读库，不因此拉起 runtime。
+  const session = await getPersistedSession(context, sessionId);
+  if (!session) {
+    throw new ProtocolRequestError(-32004, "Session has no persisted snapshot");
+  }
+  const active = context.sessions.get(sessionId);
+  const messages = active
+    ? await readActiveSessionMessages(context, active)
+    : await sessionStore.messages({ sessionID: session.id });
+  return {
+    title: session.title,
+    createdAt: session.time.created,
+    updatedAt: session.time.updated,
+    messages,
+  };
+}
+
+/** 同步服务只接受属于开启同步那个工作区的会话，隔离 key 与任务索引一致。 */
+export async function persistedSessionWorkspaceKey(
+  context: LCodeProtocolAgentServerContext,
+  sessionId: string,
+): Promise<string | null> {
+  const session = await getPersistedSession(context, sessionId);
+  if (!session) return null;
+  return session.workspaceID?.trim() || session.directory;
+}
+
+export async function importDeviceSyncSession(
+  context: LCodeProtocolAgentServerContext,
+  rawParams: unknown,
+) {
+  const params = parseParams(lcodeSessionImportDeviceSyncParamsSchema, rawParams);
+  const sessionStore = context.deps.sessionStore;
+  if (!sessionStore?.commitDeviceSyncBundle) {
+    throw new ProtocolRequestError(
+      -32003,
+      "Device sync import requires atomic session storage",
+    );
+  }
+  const sessionId = createSessionId();
+  const traceContext = createProtocolRootTraceContext(sessionId);
+  const bundle = buildDeviceSyncBundle({
+    snapshot: params.snapshot,
+    workspacePath: params.workspace.workspacePath,
+    workspaceIdentity: params.workspace.workspaceIdentity,
+    version: context.deps.version ?? "0.0.0",
+    traceId: traceContext.traceId,
+  });
+  const session = await sessionStore.commitDeviceSyncBundle(bundle);
+  return { sessionId: String(session.id) };
 }
 
 export async function readMessages(context: LCodeProtocolAgentServerContext, rawParams: unknown) {

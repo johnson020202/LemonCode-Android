@@ -93,6 +93,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   onThemeChange,
   onSettingsButtonClick,
   remoteControlPanel,
+  deviceSyncPanel,
   onUsageClick,
   onLogin,
   onLogout,
@@ -113,6 +114,8 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
    * MobileRemoteControlPanel；不传则不渲染入口，平台门禁与 workspace 上下文由调用方决定。
    */
   remoteControlPanel?: ReactNode;
+  /** 设备同步入口，与远程控制并列。不传则不渲染。 */
+  deviceSyncPanel?: ReactNode;
   onUsageClick?: () => void;
   onLogin?: () => void;
   onLogout?: () => void;
@@ -416,6 +419,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="flex shrink-0 items-center gap-1.5">
+          {deviceSyncPanel}
           {remoteControlPanel ? (
             <Popover>
               <ControlHintTooltip

@@ -14,7 +14,7 @@ public final class UrlPolicy {
 
     private UrlPolicy() {}
 
-    public enum Navigation { IN_APP, EXTERNAL_HTTPS, BLOCK }
+    public enum Navigation { IN_APP, MIRROR, EXTERNAL_HTTPS, BLOCK }
 
     /** 本机运行时 origin；端口由内核分配后在启动时传入。 */
     public static final class LocalOrigin {
@@ -50,11 +50,23 @@ public final class UrlPolicy {
         if (origin.allows(value)) return Navigation.IN_APP;
         try {
             URI uri = new URI(value);
-            return "https".equalsIgnoreCase(uri.getScheme()) && !uri.isOpaque()
-                    && uri.getHost() != null && uri.getRawUserInfo() == null
-                    ? Navigation.EXTERNAL_HTTPS : Navigation.BLOCK;
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.isOpaque()
+                    || uri.getHost() == null || uri.getRawUserInfo() != null) {
+                return Navigation.BLOCK;
+            }
+            // 镜像配对页留在 WebView：只放行 /p/<roomId> 这一类路径，
+            // 其余 https 仍交给系统浏览器确认。
+            String path = uri.getRawPath();
+            return path != null && path.startsWith("/p/") && path.length() > 3
+                    ? Navigation.MIRROR : Navigation.EXTERNAL_HTTPS;
         } catch (URISyntaxException exception) {
             return Navigation.BLOCK;
         }
+    }
+
+    /** 本机页面与镜像页都在应用内导航；其余导航按 {@link #localNavigation} 处理。 */
+    public static boolean isInApp(LocalOrigin origin, String value) {
+        Navigation action = localNavigation(origin, value);
+        return action == Navigation.IN_APP || action == Navigation.MIRROR;
     }
 }

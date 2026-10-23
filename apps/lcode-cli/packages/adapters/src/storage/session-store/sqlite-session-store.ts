@@ -57,6 +57,7 @@ import * as transcriptSnapshotRepository from "./repositories/transcript-snapsho
 import { readTranscriptWindow } from "./repositories/transcript-window.js";
 
 import { sessionForkMethods } from "./store-fork.js";
+import { deviceSyncMethods } from "./store-device-sync.js";
 import { sharedContextMethods } from "./store-shared-context.js";
 import { sessionTargetMethods } from "./store-target.js";
 import { auxiliaryStoreMethods } from "./store-auxiliary.js";
@@ -65,6 +66,7 @@ import { worktreeRebindMethods } from "./store-worktree-rebind.js";
 import type { StoreMethods } from "./store-access.js";
 
 type ForkMethods = StoreMethods<typeof sessionForkMethods>;
+type DeviceSyncMethods = StoreMethods<typeof deviceSyncMethods>;
 type SharedContextMethods = StoreMethods<typeof sharedContextMethods>;
 type TargetMethods = StoreMethods<typeof sessionTargetMethods>;
 type AuxiliaryMethods = StoreMethods<typeof auxiliaryStoreMethods>;
@@ -82,6 +84,7 @@ export class SqliteSessionStore
   // 方法由下方 descriptor 安装，declare 不生成实例字段；连接/缓存仍由本类独占。
   declare createForkedSessionWithMetadata: ForkMethods["createForkedSessionWithMetadata"];
   declare commitForkBundle: ForkMethods["commitForkBundle"];
+  declare commitDeviceSyncBundle: DeviceSyncMethods["commitDeviceSyncBundle"];
   declare commitSharedContextImportBundle: SharedContextMethods["commitSharedContextImportBundle"];
   declare transitionSharedContextImport: SharedContextMethods["transitionSharedContextImport"];
   declare readTodos: TargetMethods["readTodos"];
@@ -417,6 +420,7 @@ export class SqliteSessionStore
 // 保持既有 class prototype 方法描述符和调用 arity；拆出的职责借用同一实例，不复制连接/缓存。
 for (const methods of [
   sessionForkMethods,
+  deviceSyncMethods,
   sharedContextMethods,
   sessionTargetMethods,
   auxiliaryStoreMethods,

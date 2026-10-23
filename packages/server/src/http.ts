@@ -35,6 +35,7 @@ import {
   remoteTargetSchema,
   SERVER_REMOTE_PROTOCOL_VERSION,
   LCODE_RPC_HOST_CAPABILITY_HEADER,
+  lcodeSessionImportDeviceSyncParamsSchema,
   LCODE_VERSION,
   type ServerRemoteInfo,
   type ServerRemoteWorkspaceInfo,
@@ -83,6 +84,9 @@ function wrapWebSocket(ws: WebSocket): ISocket {
 
 const log = (...args: unknown[]) =>
   console.log(formatLogPrefix("lcode-server:http", process.pid), ...args);
+
+/** 与电脑侧同步服务一致的快照上限；超过直接拒绝，不做截断。 */
+const MAX_DEVICE_SYNC_BYTES = 32 * 1024 * 1024;
 
 function setupChannelServer(
   ws: WebSocket,
@@ -334,6 +338,51 @@ export function createHttpServer(
 
   app.get("/api/server-info", (c) => c.json(createServerInfo(options)));
   app.post("/api/rpc-host-capability", (c) => c.json(hostCapabilities.issue()));
+  // 设备同步落库：安卓原生层把从电脑拉到的快照交给本机 Agent 写成新会话。
+  // 一次性 capability 与 /ws/host 共用，避免局域网内任意请求往本机会话库写数据。
+  app.post("/api/device-sync/import", async (c) => {
+    if (!hostCapabilities.consume(c.req.header(LCODE_RPC_HOST_CAPABILITY_HEADER))) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    const declaredLength = Number(c.req.header("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_DEVICE_SYNC_BYTES) {
+      return c.json({ error: "Snapshot too large" }, 413);
+    }
+    const body = await c.req.json().catch(() => null);
+    const workspace = resolveServerWorkspaces(options)[0];
+    const workspacePath = workspace?.path;
+    if (!workspacePath) {
+      return c.json({ error: "No workspace" }, 409);
+    }
+    // workspaceKey 与客户端身份规则一致：有 identity 用 identity，否则回落到路径。
+    const workspaceKey = workspace.workspaceIdentity?.trim() || workspacePath;
+    const parsed = lcodeSessionImportDeviceSyncParamsSchema.safeParse({
+      workspace: {
+        workspacePath,
+        workspaceKey,
+        ...(workspace.workspaceIdentity ? { workspaceIdentity: workspace.workspaceIdentity } : {}),
+      },
+      snapshot: (body as { snapshot?: unknown } | null)?.snapshot,
+    });
+    if (!parsed.success) {
+      return c.json({ error: formatZodError(parsed.error) }, 400);
+    }
+    const agentService = services.getOptional(ILCodeAgentService);
+    if (!agentService) {
+      return c.json({ error: "Agent unavailable" }, 503);
+    }
+    try {
+      return c.json(
+        await agentService.importDeviceSync({
+          workspacePath: parsed.data.workspace.workspacePath,
+          workspaceIdentity: parsed.data.workspace.workspaceIdentity,
+          snapshot: parsed.data.snapshot,
+        }),
+      );
+    } catch {
+      return c.json({ error: "Device sync import failed" }, 500);
+    }
+  });
 
   // 普通 `/ws` 永远是 terminal-client；浏览器/任意客户端设置旧 mode header
   // 都不能再把自己提升为 trusted host。

@@ -2274,6 +2274,14 @@ const enUS: Record<string, string> = {
   "resourceManager.storage.confirmDescription.backups":
     "These copies allow recovery if an upgrade or migration goes wrong; deleting them cannot be undone.",
   "settings.remoteControl.title": "Remote control",
+  "settings.deviceSync.title": "Sync to phone",
+  "settings.deviceSync.pick": "Choose a conversation",
+  "settings.deviceSync.empty": "This workspace has no conversation to sync",
+  "settings.deviceSync.noLan": "No LAN address is available, so the phone cannot connect",
+  "settings.deviceSync.hint": "Scan with LCode on your phone to copy this conversation",
+  "settings.deviceSync.failed": "Could not start sync",
+  "settings.deviceSync.expiresAt": "Valid until {time}",
+  "settings.deviceSync.stop": "Stop",
   "settings.remoteControl.unavailable":
     "Remote control is only available in the LCode desktop app, and requires a desktop build with this feature.",
   "settings.remoteControl.enable.title": "Enable remote control",

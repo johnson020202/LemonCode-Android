@@ -34,6 +34,7 @@ import {
   formatLogPrefix,
   resolveWorkspaceKey,
   type TraceId,
+  type LCodeSessionImportDeviceSyncParams,
   LCODE_AGENT_PROVIDER,
   LCODE_AGENT_PROVIDER_NOT_READY_CODE,
   LCODE_AGENT_PROVIDER_NOT_READY_REASON,
@@ -93,7 +94,10 @@ import {
   lcodeSessionWorktreeRebindParamsSchema,
   lcodeSessionWorktreeRebindResultSchema,
   lcodeSessionCompactResultSchema,
+  lcodeSessionSyncStartResultSchema,
+  lcodeSessionSyncStopResultSchema,
   lcodeSessionEventsResultSchema,
+  lcodeSessionImportDeviceSyncResultSchema,
   lcodeSessionGoalResultSchema,
   lcodeSessionListResultSchema,
   lcodeSessionSubagentsResultSchema,
@@ -3857,6 +3861,40 @@ export function createLCodeAgentService(
         lcodeSessionMessagesResultSchema,
       );
       return result.messages;
+    },
+
+    async importDeviceSync(
+      params: LCodeAgentWorkspaceTarget & {
+        snapshot: LCodeSessionImportDeviceSyncParams["snapshot"];
+      },
+    ) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        lcodeProtocolMethods.sessionImportDeviceSync,
+        {
+          workspace: buildWorkspaceRef(params),
+          snapshot: params.snapshot,
+        },
+        lcodeSessionImportDeviceSyncResultSchema,
+      );
+    },
+
+    async startDeviceSync(params: LCodeAgentSessionTarget & { workspaceKey: string }) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        lcodeProtocolMethods.sessionSyncStart,
+        { sessionId: params.sessionId, workspaceKey: params.workspaceKey },
+        lcodeSessionSyncStartResultSchema,
+      );
+    },
+
+    async stopDeviceSync(params: LCodeAgentSessionTarget) {
+      const client = await getReadOnlyClient(params);
+      await client.request(
+        lcodeProtocolMethods.sessionSyncStop,
+        { sessionId: params.sessionId },
+        lcodeSessionSyncStopResultSchema,
+      );
     },
 
     async readSessionDebug(params) {

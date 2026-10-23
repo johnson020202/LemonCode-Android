@@ -4,6 +4,7 @@ import type {
   LCodeAgentMcpServer,
   LCodeDeliveryKind,
   LCodeMessageWithParts,
+  LCodeSessionSyncStartResult,
   ModelSelection,
   LCodePermissionRequestParams,
   LCodeUserInputRequestParams,
@@ -145,6 +146,8 @@ export interface ILCodeSessionService {
   listSessions(params: LCodeSessionListParams): Promise<LCodeSessionInfo[]>;
   readSession(params: LCodeSessionReadParams): Promise<LCodeSessionStateSnapshot>;
   readSessionMessages(params: LCodeSessionMessagesParams): Promise<LCodeMessageWithParts[]>;
+  startDeviceSync(params: LCodeTaskTarget): Promise<LCodeSessionSyncStartResult>;
+  stopDeviceSync(params: LCodeTaskTarget): Promise<void>;
   readSessionEvents(params: LCodeSessionEventsParams): Promise<LCodeSessionEvent[]>;
   promoteDeferredDraftSession(params: LCodeTaskTarget): Promise<void>;
   closeSession(params: LCodeTaskTarget): Promise<void>;

@@ -396,12 +396,16 @@ async function resolveWebBootstrap(): Promise<WebBootstrapResult> {
     }
     const serverInfo = (await response.json()) as Partial<ServerRemoteInfo>;
     const workspace = Array.isArray(serverInfo.workspaces) ? serverInfo.workspaces[0] : undefined;
+    // 安卓扫码拷贝完成后用 ?task=<会话 ID> 重新加载本机客户端；只接受
+    // 与 createSessionId 同构的字符集，避免把任意查询值塞进会话恢复路径。
+    const taskId = params.get("task")?.trim();
     return {
       wsUrl,
       ...(workspace?.path ? { initialWorkspaceAbsPath: workspace.path } : {}),
       ...(workspace?.workspaceIdentity
         ? { initialWorkspaceIdentity: workspace.workspaceIdentity }
         : {}),
+      ...(taskId && /^[A-Za-z0-9_-]{1,200}$/u.test(taskId) ? { initialTaskId: taskId } : {}),
     };
   } catch {
     return { wsUrl };

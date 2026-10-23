@@ -54,6 +54,13 @@
                 android:text="@string/connect"
                 android:enabled="false" />
             <Button
+                android:id="@+id/scan_sync"
+                style="@style/Button.LemonCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/scan_sync"
+                android:enabled="false" />
+            <Button
                 android:id="@+id/reconnect"
                 style="@style/Button.LemonCode"
                 android:layout_width="match_parent"

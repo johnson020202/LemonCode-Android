@@ -414,6 +414,17 @@ export function createLCodeSessionService({
       return agentService.readSessionMessages(params);
     },
 
+    startDeviceSync(params: LCodeTaskTarget) {
+      return agentService.startDeviceSync({
+        ...params,
+        workspaceKey: params.workspaceIdentity?.trim() || params.workspacePath,
+      });
+    },
+
+    stopDeviceSync(params: LCodeTaskTarget) {
+      return agentService.stopDeviceSync(params);
+    },
+
     readSessionEvents(params: LCodeSessionEventsParams) {
       return agentService.readSessionEvents(params);
     },

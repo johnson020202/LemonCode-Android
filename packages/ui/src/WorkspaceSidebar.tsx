@@ -85,6 +85,7 @@ import {
   type SidebarTaskSortBy,
 } from "@/lib/sidebarTaskPreferences.js";
 import { setPendingSettingsSection } from "@/lib/settingsNavigation.js";
+import { DeviceSyncPanel } from "@/settings/DeviceSyncPanel.js";
 import { MobileRemoteControlPanel } from "@/settings/MobileRemoteControlPanel.js";
 import { hasDesktopPlatformCapability } from "@/settings/settingsPageConfig.js";
 import {
@@ -1658,6 +1659,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             onLocaleChange={handleLocaleChange}
             onThemeChange={handleThemeChange}
             onSettingsButtonClick={openSettingsTab}
+            deviceSyncPanel={
+              showRemoteControlFooterEntry ? (
+                <DeviceSyncPanel
+                  workspacePath={workspacePath}
+                  workspaceIdentity={workspaceIdentity}
+                  remoteSessionId={workspaceRemoteSessionId}
+                />
+              ) : undefined
+            }
             remoteControlPanel={
               showRemoteControlFooterEntry ? (
                 <MobileRemoteControlPanel

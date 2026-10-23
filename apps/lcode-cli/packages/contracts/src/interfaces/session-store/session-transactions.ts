@@ -56,6 +56,16 @@ export interface ForkCommitBundle {
   };
 }
 
+/**
+ * 设备同步的单事务载荷：把另一台设备的会话快照落成新会话。
+ * 消息与 part 的 ID、sessionID 以及 assistant 的执行路径由调用方重写后再传入；
+ * adapter 只保证会话行、全部 message、全部 part 全有或全无，不参与路径裁决。
+ */
+export interface DeviceSyncCommitBundle {
+  session: CreateSessionInput;
+  messages: MessageWithParts[];
+}
+
 /** 分享导入的单事务载荷：新 session、唯一 model-only 上下文和 provenance 全有或全无。 */
 export interface SharedContextImportCommitBundle {
   session: CreateSessionInput;

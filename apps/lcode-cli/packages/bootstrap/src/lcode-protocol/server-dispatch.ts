@@ -1,8 +1,12 @@
+import type { DeviceSyncControl } from "../device-sync/device-sync-control.js";
 import { querySessionDebug } from "./session-debug.js";
 import { cleanupWorktreeSessions } from "./worktree-session-cleanup.js";
 import { rebindWorktreeSessions } from "./worktree-session-rebind.js";
 import { workspaceFileMutationJournal } from "./workspace-file-mutation-journal.js";
-import { lcodeProtocolMethods, lcodeWorkspaceHookTrustGrantParamsSchema } from "@lcode/shared";
+import {
+  lcodeProtocolMethods, lcodeSessionSyncStartParamsSchema, lcodeSessionSyncStopParamsSchema,
+  lcodeWorkspaceHookTrustGrantParamsSchema,
+} from "@lcode/shared";
 
 import {
   V4_METHODS,
@@ -21,8 +25,11 @@ import {
   goalSession,
   getTaskTokenUsage,
   getUsageStats,
+  importDeviceSyncSession,
   listSessions,
   listSessionSubagents,
+  persistedSessionWorkspaceKey,
+  readDeviceSyncSnapshot,
   readEvents,
   readMessages,
   readSession,
@@ -78,6 +85,7 @@ import { updateDynamicWorkflowPolicy } from "./dynamic-workflow-policy.js";
 import { grantWorkspaceHookTrustForProtocol } from "./workspace-hook-trust.js";
 
 import {
+  parseParams,
   ProtocolRequestError,
   type LCodeProtocolAgentServerContext,
   type LCodeProtocolSessionRecord,
@@ -100,6 +108,8 @@ export interface LCodeProtocolPostResponseBatch {
 export interface ProtocolDispatchHost extends ProtocolOperationState {
   context: LCodeProtocolAgentServerContext;
   postResponseOutbox: Map<LCodeProtocolRequestId, LCodeProtocolPostResponseBatch>;
+  /** 设备同步监听。缺省时 syncStart 拒绝，不在请求路径上隐式创建端口。 */
+  deviceSync?: DeviceSyncControl;
 }
 
 /**
@@ -250,6 +260,12 @@ export async function dispatchRequest(host: ProtocolDispatchHost, request: LCode
       return await readSession(host.context, request.params);
     case lcodeProtocolMethods.sessionMessages:
       return await readMessages(host.context, request.params);
+    case lcodeProtocolMethods.sessionSyncStart:
+      return await startDeviceSync(host, request.params);
+    case lcodeProtocolMethods.sessionSyncStop:
+      return await stopDeviceSync(host, request.params);
+    case lcodeProtocolMethods.sessionImportDeviceSync:
+      return await importDeviceSyncSession(host.context, request.params);
     case lcodeProtocolMethods.sessionEvents:
       return await readEvents(host.context, request.params);
     case lcodeProtocolMethods.sessionSubscribe:
@@ -394,3 +410,29 @@ export async function dispatchRequest(host: ProtocolDispatchHost, request: LCode
       throw new ProtocolRequestError(-32601, `Method not found: ${request.method}`);
   }
 }
+
+async function startDeviceSync(host: ProtocolDispatchHost, rawParams: unknown) {
+  const params = parseParams(lcodeSessionSyncStartParamsSchema, rawParams);
+  if (!host.deviceSync) {
+    throw new ProtocolRequestError(-32003, "Device sync is not available");
+  }
+  const workspaceKey = await persistedSessionWorkspaceKey(host.context, params.sessionId);
+  if (workspaceKey === null) {
+    throw new ProtocolRequestError(-32004, "Session has no persisted snapshot");
+  }
+  if (workspaceKey !== params.workspaceKey) {
+    throw new ProtocolRequestError(-32004, "Session is not in the requested workspace");
+  }
+  return host.deviceSync.start({
+    sessionId: params.sessionId,
+    workspaceKey,
+    readSnapshot: (sessionId) => readDeviceSyncSnapshot(host.context, sessionId),
+    workspaceKeyOf: (sessionId) => persistedSessionWorkspaceKey(host.context, sessionId),
+  });
+}
+
+async function stopDeviceSync(host: ProtocolDispatchHost, rawParams: unknown) {
+  await host.deviceSync?.stop(parseParams(lcodeSessionSyncStopParamsSchema, rawParams).sessionId);
+  return {};
+}
+

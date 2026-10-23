@@ -62,6 +62,7 @@ public final class MainActivity extends Activity {
     private static final String PREFERENCES = "runtime";
     private static final String LAST_ORIGIN = "last_origin";
     private static final int FILE_PICKER = 31;
+    private static final int SCAN_REQUEST = 32;
     private static final int MAX_UPLOAD_FILES = 32;
 
     private SharedPreferences preferences;
@@ -71,6 +72,7 @@ public final class MainActivity extends Activity {
     private TextView status;
     private TextView version;
     private Button connectButton;
+    private Button scanButton;
     private Button reconnectButton;
     private TextView previousOrigin;
     private ProgressBar loadProgress;
@@ -84,6 +86,7 @@ public final class MainActivity extends Activity {
     private boolean pickerInFlight;
     private OnBackInvokedCallback backCallback;
     private Thread starter;
+    private boolean syncing;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -95,6 +98,7 @@ public final class MainActivity extends Activity {
         status = findViewById(R.id.status);
         version = findViewById(R.id.version);
         connectButton = findViewById(R.id.connect);
+        scanButton = findViewById(R.id.scan_sync);
         reconnectButton = findViewById(R.id.reconnect);
         previousOrigin = findViewById(R.id.previous_address);
         loadProgress = findViewById(R.id.load_progress);
@@ -106,6 +110,7 @@ public final class MainActivity extends Activity {
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
         }
         connectButton.setOnClickListener(view -> launchRuntime());
+        scanButton.setOnClickListener(view -> startScan());
         reconnectButton.setOnClickListener(view -> launchRuntime());
         findViewById(R.id.forget).setOnClickListener(view -> confirmReset());
         version.setText(getString(R.string.version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
@@ -199,9 +204,11 @@ public final class MainActivity extends Activity {
         return files[0];
     }
 
+
     private void startRuntime() {
         if (starter != null) return;
         connectButton.setEnabled(false);
+        scanButton.setEnabled(false);
         status.setText(R.string.starting_runtime);
         starter = new Thread(() -> {
             try {
@@ -213,6 +220,7 @@ public final class MainActivity extends Activity {
                     activeOrigin = new UrlPolicy.LocalOrigin(port);
                     preferences.edit().putString(LAST_ORIGIN, activeOrigin.origin()).apply();
                     connectButton.setEnabled(true);
+                    scanButton.setEnabled(true);
                     reconnectButton.setEnabled(true);
                     previousOrigin.setText(getString(R.string.local_origin, activeOrigin.origin()));
                     status.setText(R.string.runtime_ready);
@@ -269,12 +277,26 @@ public final class MainActivity extends Activity {
 
     @SuppressLint("SetJavaScriptEnabled")
     private void launchRuntime() {
+        launchRuntime(null);
+    }
+
+    /**
+     * initialUrl 为空时打开本机工作区；镜像配对链接与拷贝完成后的
+     * `?task=` 页面由调用方传入，仍按同一套来源策略校验。
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private void launchRuntime(String initialUrl) {
         if (activeOrigin == null) {
             startRuntime();
             return;
         }
-        disposeWebView();
         UrlPolicy.LocalOrigin origin = activeOrigin;
+        String target = initialUrl == null ? origin.launchUrl() : initialUrl;
+        if (!UrlPolicy.isInApp(origin, target)) {
+            toast(R.string.navigation_blocked);
+            return;
+        }
+        disposeWebView();
         WebView view = new WebView(this);
         webView = view;
         view.setSaveEnabled(false);
@@ -321,7 +343,7 @@ public final class MainActivity extends Activity {
             }
 
             @Override public void onPageStarted(WebView source, String url, android.graphics.Bitmap icon) {
-                if (source == webView && UrlPolicy.localNavigation(origin, url) != UrlPolicy.Navigation.IN_APP) {
+                if (source == webView && !UrlPolicy.isInApp(origin, url)) {
                     source.stopLoading();
                     failSession(source, R.string.navigation_blocked);
                 }
@@ -391,7 +413,7 @@ public final class MainActivity extends Activity {
         InputMethodManager input = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (input != null) input.hideSoftInputFromWindow(webView.getWindowToken(), 0);
         view.requestFocus();
-        view.loadUrl(origin.launchUrl());
+        view.loadUrl(target);
     }
 
     private static WebResourceResponse errorResponse(int status, String reason) {
@@ -402,7 +424,9 @@ public final class MainActivity extends Activity {
 
     private boolean handleNavigation(String url) {
         UrlPolicy.Navigation action = UrlPolicy.localNavigation(activeOrigin, url);
-        if (action == UrlPolicy.Navigation.IN_APP) return false;
+        if (action == UrlPolicy.Navigation.IN_APP || action == UrlPolicy.Navigation.MIRROR) {
+            return false;
+        }
         if (action == UrlPolicy.Navigation.EXTERNAL_HTTPS) {
             Uri target = Uri.parse(url);
             String destination = "https://" + target.getHost()
@@ -424,6 +448,79 @@ public final class MainActivity extends Activity {
             toast(R.string.navigation_blocked);
         }
         return true;
+    }
+
+    private void startScan() {
+        if (activeOrigin == null) {
+            toast(R.string.scan_runtime_not_ready);
+            startRuntime();
+            return;
+        }
+        startActivityForResult(new Intent(this, ScanActivity.class), SCAN_REQUEST);
+    }
+
+    /** 扫码结果只在这里分流；无法识别的内容不发起任何连接。 */
+    private void handleScan(String value) {
+        ScanPayload payload = ScanPayload.parse(value);
+        if (payload.kind() == ScanPayload.Kind.UNKNOWN) {
+            toast(R.string.scan_unknown);
+            return;
+        }
+        if (payload.kind() == ScanPayload.Kind.MIRROR) {
+            launchRuntime(payload.url());
+            return;
+        }
+        startCopySync(payload);
+    }
+
+    private void startCopySync(ScanPayload payload) {
+        if (activeOrigin == null || activePort <= 0) {
+            toast(R.string.scan_runtime_not_ready);
+            return;
+        }
+        if (syncing) return;
+        syncing = true;
+        scanButton.setEnabled(false);
+        final int port = activePort;
+        toast(R.string.scan_syncing);
+        new Thread(() -> {
+            try {
+                String snapshot = CopyClient.fetch(payload);
+                String sessionId = DeviceSyncClient.importSnapshot(port, snapshot);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    syncing = false;
+                    scanButton.setEnabled(true);
+                    UrlPolicy.LocalOrigin current = activeOrigin;
+                    if (current == null) {
+                        toast(R.string.sync_failed);
+                        return;
+                    }
+                    toast(R.string.sync_completed);
+                    launchRuntime(current.launchUrl() + "?task=" + Uri.encode(sessionId));
+                });
+            } catch (CopyClient.SyncException exception) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    syncing = false;
+                    scanButton.setEnabled(true);
+                    toast(messageFor(exception.failure()));
+                });
+            }
+        }, "lcode-device-sync").start();
+    }
+
+    private static int messageFor(CopyClient.Failure failure) {
+        switch (failure) {
+            case EXPIRED:
+                return R.string.sync_expired;
+            case TOO_LARGE:
+                return R.string.sync_too_large;
+            case UNREACHABLE:
+                return R.string.sync_unreachable;
+            default:
+                return R.string.sync_failed;
+        }
     }
 
     private boolean chooseFiles(WebView source, ValueCallback<Uri[]> callback,
@@ -472,6 +569,12 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == SCAN_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                handleScan(data.getStringExtra(ScanActivity.EXTRA_RESULT));
+            }
+            return;
+        }
         if (requestCode != FILE_PICKER) return;
         pickerInFlight = false;
         ValueCallback<Uri[]> callback = pendingFiles;
@@ -549,10 +652,14 @@ public final class MainActivity extends Activity {
         if (webView != null) {
             WebBackForwardList history = webView.copyBackForwardList();
             int previous = history.getCurrentIndex() - 1;
-            if (previous >= 0 && UrlPolicy.localNavigation(activeOrigin,
-                    history.getItemAtIndex(previous).getUrl()) == UrlPolicy.Navigation.IN_APP) {
+            if (previous >= 0 && UrlPolicy.isInApp(activeOrigin,
+                    history.getItemAtIndex(previous).getUrl())) {
                 cancelFileCallback();
                 webView.goBack();
+            } else if (UrlPolicy.localNavigation(activeOrigin, webView.getUrl())
+                    == UrlPolicy.Navigation.MIRROR) {
+                // 关闭镜像页回到本机客户端；两个 origin 的存储互不可见。
+                launchRuntime();
             } else {
                 showHome();
             }

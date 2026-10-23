@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/scan_preview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:padding="@dimen/space_standard"
+        android:paddingBottom="48dp">
+
+        <TextView
+            android:id="@+id/scan_hint"
+            style="@style/Text.LemonCode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#99000000"
+            android:padding="@dimen/space_standard"
+            android:text="@string/scan_hint"
+            android:textAlignment="center"
+            android:accessibilityLiveRegion="polite" />
+
+        <Button
+            android:id="@+id/scan_cancel"
+            style="@style/Button.LemonCode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_standard"
+            android:text="@string/scan_cancel" />
+    </LinearLayout>
+</FrameLayout>

@@ -1734,6 +1734,76 @@ export const lcodeSessionMessagesParamsSchema = z
   .strict();
 export type LCodeSessionMessagesParams = z.infer<typeof lcodeSessionMessagesParamsSchema>;
 
+// 设备同步的正文由手机原样转发电脑快照：只校验跨进程必需的归属字段，
+// 其余 part/info 字段透传，避免为一次性拷贝复制整份消息类型。
+const lcodeDeviceSyncMessageSchema = z
+  .object({
+    info: z
+      .object({
+        id: nonEmptyString,
+        sessionID: nonEmptyString,
+        role: z.enum(["user", "assistant"]),
+        time: z.object({ created: z.number() }).passthrough(),
+      })
+      .passthrough(),
+    parts: z.array(
+      z
+        .object({
+          id: nonEmptyString,
+          messageID: nonEmptyString,
+          sessionID: nonEmptyString,
+          type: z.string(),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+export const lcodeSessionImportDeviceSyncParamsSchema = z
+  .object({
+    workspace: lcodeWorkspaceRefSchema,
+    snapshot: z
+      .object({
+        title: z.string(),
+        createdAt: z.number().int().nonnegative(),
+        updatedAt: z.number().int().nonnegative(),
+        messages: z.array(lcodeDeviceSyncMessageSchema),
+      })
+      .passthrough(),
+  })
+  .strict();
+export type LCodeSessionImportDeviceSyncParams = z.infer<
+  typeof lcodeSessionImportDeviceSyncParamsSchema
+>;
+export const lcodeSessionImportDeviceSyncResultSchema = z
+  .object({ sessionId: nonEmptyString })
+  .strict();
+export type LCodeSessionImportDeviceSyncResult = z.infer<
+  typeof lcodeSessionImportDeviceSyncResultSchema
+>;
+
+export const lcodeSessionSyncStartParamsSchema = z
+  .object({
+    sessionId: nonEmptyString,
+    workspaceKey: nonEmptyString,
+  })
+  .strict();
+export const lcodeSessionSyncStartResultSchema = z
+  .object({
+    port: z.number().int().positive(),
+    urls: z.array(z.string().url()),
+    token: z.string().min(1),
+    expiresAt: z.number().int().positive(),
+  })
+  .strict();
+export type LCodeSessionSyncStartResult = z.infer<typeof lcodeSessionSyncStartResultSchema>;
+export const lcodeSessionSyncStopResultSchema = z.object({}).strict();
+export const lcodeSessionSyncStopParamsSchema = z
+  .object({
+    sessionId: nonEmptyString,
+  })
+  .strict();
+
 export const lcodeSessionEventsParamsSchema = z
   .object({
     sessionId: nonEmptyString,
@@ -3702,6 +3772,11 @@ export const lcodeProtocolMethods = {
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",
   sessionRead: "session/read",
   sessionMessages: "session/messages",
+  // 设备同步监听：CLI 进程内启动一次性拉取服务，返回局域网地址与密钥。
+  sessionSyncStart: "session/syncStart",
+  sessionSyncStop: "session/syncStop",
+  // 设备同步落库：手机把拉到的快照交给本机 CLI，一次事务写成新会话。
+  sessionImportDeviceSync: "session/importDeviceSync",
   sessionEvents: "session/events",
   sessionDebug: "session/debug",
   sessionSubscribe: "session/subscribe",

@@ -2137,6 +2137,14 @@ const zhCN: Record<string, string> = {
   "resourceManager.storage.confirmDescription.backups":
     "这些副本用于升级或迁移出错时恢复数据，删除后将无法回退。",
   "settings.remoteControl.title": "远程控制",
+  "settings.deviceSync.title": "同步到手机",
+  "settings.deviceSync.pick": "选择要同步的对话",
+  "settings.deviceSync.empty": "当前工作区没有可同步的对话",
+  "settings.deviceSync.noLan": "没有可用的局域网地址，手机无法连接",
+  "settings.deviceSync.hint": "用手机 LCode 扫描二维码，对话会复制到手机上",
+  "settings.deviceSync.failed": "无法开启同步",
+  "settings.deviceSync.expiresAt": "有效期至 {time}",
+  "settings.deviceSync.stop": "停止",
   "settings.remoteControl.unavailable":
     "远程控制只能在 LCode 桌面端使用，且需要桌面版本支持该功能。",
   "settings.remoteControl.enable.title": "启用远程控制",

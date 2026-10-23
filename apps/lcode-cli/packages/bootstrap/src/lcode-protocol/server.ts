@@ -6,6 +6,7 @@ import {
   type ProtocolClientRequestState,
   type LCodeProtocolOutboundMessage,
 } from "./server-client-requests.js";
+import { createDeviceSyncControl } from "../device-sync/device-sync-control.js";
 import { dispatchRequest, type LCodeProtocolPostResponseBatch } from "./server-dispatch.js";
 
 import type { BrowserControlPort } from "@lcode/contracts";
@@ -96,6 +97,7 @@ export class LCodeProtocolAgentServer {
   }
   private readonly context: LCodeProtocolAgentServerContext;
   private readonly logger;
+  private readonly deviceSync = createDeviceSyncControl();
   private readonly pluginOperationControllers = new Map<string, AbortController>();
   private readonly workspaceGenerateTextControllers = new Map<string, AbortController>();
   /**
@@ -234,7 +236,10 @@ export class LCodeProtocolAgentServer {
   /** 进程资源关闭，不使用会删除产品会话/发布 session.removed 的 session/close。 */
   shutdown(): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise;
-    this.shutdownPromise = this.runtimeResources.close();
+    this.shutdownPromise = Promise.all([
+      this.runtimeResources.close(),
+      this.deviceSync.close(),
+    ]).then(() => undefined);
     const error = new Error("LCode Protocol runtime stopping");
     this.disconnectClient(error);
     this.clientRequests.messageSink = undefined;
@@ -338,6 +343,7 @@ export class LCodeProtocolAgentServer {
       {
         context: this.context,
         postResponseOutbox: this.postResponseOutbox,
+        deviceSync: this.deviceSync,
         pluginOperationControllers: this.pluginOperationControllers,
         workspaceGenerateTextControllers: this.workspaceGenerateTextControllers,
       },
