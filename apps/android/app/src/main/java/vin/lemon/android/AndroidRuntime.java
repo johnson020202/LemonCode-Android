@@ -211,6 +211,8 @@ final class AndroidRuntime {
         }
         // 端口由内核分配后回读日志，避免固定端口与同机其它实例冲突。
         File workspace = new File(context.getFilesDir(), "workspace");
+        // HOME 保持 getFilesDir() 的原始形式：HyperOS 上规范的 /data/data 路径会被
+        // 文件系统访问策略拒绝（实测 EACCES），必须在运行时内处理 /data/user/0 别名。
         File home = new File(context.getFilesDir(), "home");
         // 服务端的 LCODE_DATA_BASE_DIR；个人 provider 配置就在其 .lcode/v2 下。
         File dataDir = new File(context.getFilesDir(), "data");
@@ -235,7 +237,7 @@ final class AndroidRuntime {
         builder.environment().put("TMPDIR", new File(home, "tmp").getAbsolutePath());
         // 固定端口：WebView 按 origin 隔离存储，端口每次变化都会让会话草稿、
         // 滚动位置、主题等 localStorage 状态整体丢失；固定后同一设备状态可延续。
-        // 端口被占用时回退到内核分配，保证仍能启动。
+        // 端口被占用时先尝试复用已在运行的服务端（见 startServer 的回退分支）。
         builder.environment().put("LCODE_SERVER_PORT", String.valueOf(PREFERRED_PORT));
         builder.environment().put("LCODE_ANDROID_RUNTIME_ROOT", new File(root, "server").getAbsolutePath());
         builder.environment().put("LCODE_WEB_STATIC_ROOT", www.getAbsolutePath());
@@ -272,15 +274,62 @@ final class AndroidRuntime {
         try {
             port = waitForPort(log);
         } catch (RuntimeStartException preferredPortFailure) {
-            // 固定端口可能被同机其它实例占用；回退到内核分配，保证应用仍能启动。
-            // 代价是 origin 变化，前端 localStorage 状态会隔离一次。
+            // 固定端口已有服务端在跑（最常见来源：另一个 MainActivity 实例先启动）。
+            // 直接复用它的同一个 origin，而不是回退随机端口——换端口等于换 origin，
+            // WebView 的 localStorage 会被整体隔离，用户看到的就是「会话和模型都没了」。
             killQuietly(process);
+            if (awaitServerQuietly(PREFERRED_PORT)) {
+                return PREFERRED_PORT;
+            }
             builder.environment().put("LCODE_SERVER_PORT", "0");
             process = startOnce(builder);
             port = waitForPort(log);
         }
         awaitServer(port, log);
         return port;
+    }
+
+    /** 端口上是否已有一个真实的 LCode 服务端；不满足则返回 false，不做任何假设。 */
+    private static boolean awaitServerQuietly(int port) {
+        java.net.HttpURLConnection connection = null;
+        try {
+            connection = (java.net.HttpURLConnection) new java.net.URL(
+                    "http://127.0.0.1:" + port + "/api/server-info").openConnection();
+            connection.setConnectTimeout(2000);
+            connection.setReadTimeout(3000);
+            if (connection.getResponseCode() != 200) return false;
+            try (InputStream body = connection.getInputStream()) {
+                String text = new String(readAll(body), StandardCharsets.UTF_8);
+                // 只认本应用的服务端，避免把同端口上其它进程误当成运行时。
+                return text.contains("\"serverId\"");
+            }
+        } catch (IOException ignored) {
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private static byte[] readAll(InputStream input) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = input.read(buffer)) != -1) out.write(buffer, 0, read);
+        return out.toByteArray();
+    }
+
+    /**
+     * files 目录的规范路径。
+     * Android 上 {@code /data/user/0/<pkg>} 是 {@code /data/data/<pkg>} 的别名，
+     * Node 的 realpath 会解析成后者；Project Memory 要求 realpath(path)===path，
+     * 因此交给运行时的 HOME 必须是规范形式。
+     */
+    private static File canonicalFilesDir(android.content.Context context) {
+        try {
+            return context.getFilesDir().getCanonicalFile();
+        } catch (IOException | RuntimeException exception) {
+            return context.getFilesDir();
+        }
     }
 
     private static Process startOnce(ProcessBuilder builder) throws RuntimeStartException {

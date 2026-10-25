@@ -102,7 +102,14 @@ public final class MainActivity extends Activity {
         reconnectButton = findViewById(R.id.reconnect);
         previousOrigin = findViewById(R.id.previous_address);
         loadProgress = findViewById(R.id.load_progress);
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
+        // 排障通道：默认关闭。以 `--ez debug_webview true` 启动时打开 WebView 调试，
+        // 便于在真机上查看 DOM、控制台错误与 WebSocket 帧（仅本机 adb 可连）。
+        boolean debugWebView = BuildConfig.DEBUG
+                || getIntent().getBooleanExtra("debug_webview", false);
+        WebView.setWebContentsDebuggingEnabled(debugWebView);
+        // release 包无法用 run-as 读取应用私有目录；排障模式下把日志复制到
+        // external files（adb 可读），否则真机上的 agent 错误只能靠猜。
+        if (debugWebView) exportDiagnostics();
         configureInsets();
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback = this::navigateBack;
@@ -195,7 +202,6 @@ public final class MainActivity extends Activity {
                         })));
     }
 
-    /** Agent 结构化日志；排障时最有价值，含 turn 与 model.request 事件。 */
     private java.io.File agentLogFile() {
         java.io.File dir = new java.io.File(getFilesDir(), "home/.lcode/cli/log");
         java.io.File[] files = dir.listFiles((d, name) -> name.endsWith(".jsonl"));
@@ -204,6 +210,71 @@ public final class MainActivity extends Activity {
         return files[0];
     }
 
+
+    /**
+     * 排障模式下把服务端与 Agent 日志复制到 external files，供 adb pull。
+     * release 包没有 run-as 权限，不导出就无法读取真机上的真实错误。
+     */
+    private void exportDiagnostics() {
+        new Thread(() -> {
+            try {
+                java.io.File out = new java.io.File(getExternalFilesDir(null), "diagnostics");
+                //noinspection ResultOfMethodCallIgnored
+                out.mkdirs();
+                copyIfPresent(new java.io.File(getFilesDir(), "runtime.log"),
+                        new java.io.File(out, "runtime.log"));
+                copyIfPresent(agentLogFile(), new java.io.File(out, "agent.jsonl"));
+                writePathFacts(new java.io.File(out, "paths.txt"));
+            } catch (IOException | RuntimeException ignored) {
+                // 导出失败不阻断启动；排障通道本就不是必需能力。
+            }
+        }, "lcode-diagnostics-export").start();
+    }
+
+    private static void copyIfPresent(java.io.File source, java.io.File target) throws IOException {
+        if (source == null || !source.isFile()) return;
+        try (java.io.InputStream input = new java.io.FileInputStream(source);
+             java.io.OutputStream output = new java.io.FileOutputStream(target)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+        }
+    }
+
+    /**
+     * 记录 App、HOME、记忆目录的真实文件系统身份。
+     * Android 上 /data/user/0 与 /data/data 互为别名，Node 的 realpath 结果取决于厂商实现；
+     * 只凭日志里的一条 “must not be a symlink” 无法判断是哪一段路径触发的。
+     */
+    private void writePathFacts(java.io.File out) throws IOException {
+        java.util.List<java.io.File> dirs = new java.util.ArrayList<>();
+        dirs.add(getFilesDir());
+        dirs.add(new java.io.File(getFilesDir(), "home"));
+        dirs.add(new java.io.File(getFilesDir(), "home/.lcode"));
+        dirs.add(new java.io.File(getFilesDir(), "home/.lcode/cli"));
+        dirs.add(new java.io.File(getFilesDir(), "home/.lcode/cli/memories"));
+        dirs.add(new java.io.File(getFilesDir(), "home/.lcode/cli/memories/projects"));
+        StringBuilder builder = new StringBuilder();
+        builder.append("androidDataDir=").append(getDataDir().getAbsolutePath()).append('\n');
+        builder.append("filesDir=").append(getFilesDir().getAbsolutePath()).append('\n');
+        for (java.io.File dir : dirs) {
+            builder.append(dir.getAbsolutePath())
+                    .append(" exists=").append(dir.exists())
+                    .append(" canonical=").append(canonicalOrSelf(dir))
+                    .append('\n');
+        }
+        try (java.io.OutputStream output = new java.io.FileOutputStream(out)) {
+            output.write(builder.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+    }
+
+    private static String canonicalOrSelf(java.io.File file) {
+        try {
+            return file.getCanonicalPath();
+        } catch (IOException | RuntimeException exception) {
+            return "<error:" + exception.getClass().getSimpleName() + ">";
+        }
+    }
 
     private void startRuntime() {
         if (starter != null) return;

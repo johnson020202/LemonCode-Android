@@ -16,10 +16,18 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.LemonCode">
+        <!--
+          singleTask + configChanges：重复启动或旋转只回到同一实例。
+          没有 singleTask 时每次点图标都会新建 Activity，各自再拉起一个服务端；
+          后启动的那个发现 31234 被占用就回退到随机端口，WebView 按 origin 隔离
+          localStorage，于是用户看到的是「没有会话、没有模型」的空白页。
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:enableOnBackInvokedCallback="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
