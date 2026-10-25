@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="preview_title">LemonCode Android</string>
-    <string name="preview_boundary">独立运行版：Node 运行时、Agent、终端、Git 与文件操作都在本机执行，不需要电脑在线。</string>
+    <string name="preview_boundary">可独立运行，也可扫码远程控制电脑：Node 运行时、Agent、终端、Git 与文件操作都在本机执行；扫电脑上的远控二维码可直接操作电脑工作区。</string>
     <string name="local_origin">本机运行时\n%1$s</string>
     <string name="starting_runtime">正在准备本机运行时…首次启动需要解包，可能稍慢。</string>
     <string name="runtime_ready">本机运行时已就绪。</string>
     <string name="runtime_failed">本机运行时启动失败：\n%1$s</string>
     <string name="runtime_failed_hint">本机运行时不可用，请返回后重试或清除数据。</string>
     <string name="connect">打开工作区</string>
-    <string name="scan_sync">扫码同步</string>
-    <string name="scan_hint">将电脑上的同步二维码放入取景框</string>
-    <string name="scan_unknown">无法识别的二维码，请扫描电脑上的同步二维码。</string>
+    <string name="scan_sync">扫码连接电脑</string>
+    <string name="scan_hint">扫描电脑上的二维码：远程控制（操作电脑工作区）或会话同步（拉取单条对话到本机）</string>
+    <string name="scan_unknown">无法识别的二维码，请扫描电脑上 LemonCode 生成的远控或同步二维码。</string>
     <string name="scan_cancel">取消</string>
     <string name="scan_ok">知道了</string>
     <string name="scan_camera_required_title">需要相机权限</string>

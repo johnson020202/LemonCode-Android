@@ -1,5 +1,7 @@
 package vin.lemon.android;
 
+import android.annotation.SuppressLint;
+
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -53,6 +55,9 @@ public final class ScanPayload {
         }
     }
 
+    // Lint NewApi 误报：decode(String, Charset) 虽在 API 33 才加 Charset 重载，
+    // 但这里走的一直是等价的 String 重载（API 1 起就有），且 charset 名固定 UTF-8。
+    @SuppressLint("NewApi")
     private static ScanPayload parseCopy(URI uri) {
         if (!IPV4.matcher(uri.getHost()).matches()) return unknown();
         int port = uri.getPort();

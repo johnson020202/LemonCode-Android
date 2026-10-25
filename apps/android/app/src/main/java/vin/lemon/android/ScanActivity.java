@@ -1,6 +1,7 @@
 package vin.lemon.android;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -145,7 +146,11 @@ public final class ScanActivity extends Activity implements LifecycleOwner {
                 ImageAnalysis analysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
-                analysis.setAnalyzer(analysisExecutor, this::analyze);
+                // Lint UnsafeOptInUsageError 误报：analyze 方法已标 @ExperimentalGetImage，
+                // 但 lint 对方法引用 this::analyze 又独立报一次，这里显式抑制。
+                @SuppressLint("UnsafeOptInUsageError")
+                Runnable bindAnalysis = () -> analysis.setAnalyzer(analysisExecutor, this::analyze);
+                bindAnalysis.run();
                 CameraSelector selector = provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
                         ? CameraSelector.DEFAULT_BACK_CAMERA : CameraSelector.DEFAULT_FRONT_CAMERA;
                 provider.unbindAll();

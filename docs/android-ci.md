@@ -1,10 +1,10 @@
-# Android 独立运行版：构建、验证与边界
+# Android 独立运行 + 远程控制版：构建、验证与边界
 
 ## 现状
 
-APK 内自带 Node 运行时、上游本地服务端、Agent 与共享 Web 客户端，在手机内独立执行，不需要电脑。已在 Android 15 arm64 模拟器上验证：应用解包运行时、启动本机服务端、WebView 加载真实界面（`127.0.0.1:<port>`）。
+APK 内自带 Node 运行时、上游本地服务端、Agent 与共享 Web 客户端，默认在手机内独立执行、不需要电脑。已在 Android 15 arm64 模拟器上验证：应用解包运行时、启动本机服务端、WebView 加载真实界面（`127.0.0.1:<port>`）。除独立运行外，还支持扫电脑上的二维码进入**远程控制**（加入电脑远控房间操作电脑工作区）或**会话同步**（把电脑上的一条会话快照一次性拉到本机）。
 
-**这仍不是“所有功能完全同步”的完成品。** 桌面 Electron 能力（内嵌浏览器、Computer Use）、文件下载、APK 自更新等尚未实现，列表见下。
+**这仍不是“所有功能完全同步”的完成品。** 桌面 Electron 能力（内嵌浏览器、Computer Use）、文件下载等尚未实现，列表见下。
 
 ## 组件所有者
 
@@ -34,18 +34,18 @@ node scripts/android/verify-apk.mjs
 - 当前仓库：`johnson020202/LemonCode-Android`（私有）。
 - `.github/workflows/android-release.yml`：打 `android-v*` tag 或手动运行会产出**固定密钥签名**的 release APK，并按需创建 GitHub Release。密钥保存在仓库 Secrets（`ANDROID_KEYSTORE_BASE64` 等），缺少任一项即失败，绝不回退 debug 证书。
 
-## 已验证（2026-10-22）
+## 已验证（2026-10-25，本次发版前重跑后更新）
 
-- 上游基线 `40851a3`，客户端 `3.17.4`。
-- `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`、`scripts/android` 10 项测试全部通过。
-- `./gradlew testDebugUnitTest lintDebug assembleDebug` 成功；JUnit 11 项通过；Android lint 0 错误。
-- `verify-apk.mjs`：110 个原生库与 manifest 链接一一对应，payload 摘要匹配，无 source map。
-- 模拟器实测：安装后自动解包，服务端监听 `127.0.0.1`，`/api/server-info` 返回本机工作区，WebView 加载真实 LCode 界面并进入引导页；截图与浏览器同页对比布局一致（之前的重叠是模拟器截屏伪影）。
-- 随包 Agent CLI 在应用沙箱内 `--version` 与 `app-server --stdio` 均可启动。
+- 上游基线 `40851a3`（与上游 v3.21.0 同一提交），客户端 `3.17.4`；上游 main 无新增提交，远控协议零差异。
+- `pnpm typecheck`、`pnpm lint`、`scripts/android` 测试、`./gradlew testDebugUnitTest lintDebug assembleDebug`、`verify-apk.mjs` 结果待本次构建后回填。
+- 模拟器实测：安装后自动解包，服务端监听 `127.0.0.1`，`/api/server-info` 返回本机工作区，WebView 加载真实 LCode 界面并进入引导页；截图与浏览器同页对比布局一致（2026-10-22 基线）。
+- 随包 Agent CLI 在应用沙箱内 `--version` 与 `app-server --stdio` 均可启动（2026-10-22 基线）。
 
 ## 未验证 / 未实现
 
 - 真实模型对话（需要用户自己的模型凭据与网络条件）。
-- 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装、APK 自更新。
-- 正式签名、覆盖升级、低版本 Android（< 8.0）与 x86 设备。
+- **远程控制（MIRROR）真机链路**：扫码 → Worker 配对 → 桌面用户允许 → WSS 数据通道 → 操作电脑工作区。协议与上游 v3.17.4 对齐，但需要真机+真实桌面端做一次端到端回归。
+- **会话同步（COPY）真机链路**：扫码 → 局域网拉取快照 → 写入本机 → 打开会话。已实现，需要真机回归。
+- 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装。
+- 覆盖升级（versionCode 1 → 2）、低版本 Android（< 8.0）与 x86 设备。
 - 上游全部业务功能的逐项设备验收；不能据构建成功宣称“全功能同步”。
