@@ -44,12 +44,19 @@ node scripts/android/verify-apk.mjs
 - 同步二维码解析使用 Android 8 起可用的 UTF-8 `URLDecoder.decode(String, String)`，不依赖 API 33 的 `Charset` 重载。
 - 发布时必须同时给 `build-standalone.mjs` 和 Gradle 传入 `ANDROID_VERSION_NAME` / `ANDROID_VERSION_CODE`，并核对 APK 实际 `aapt dump badging` 与签名；不能仅凭附件文件名判断包内版本。
 
+## 扫码协同实测（2026-10-25，Android 15 模拟器 + 隔离桌面实例）
+
+- **远程控制（MIRROR）端到端通过**：桌面 `startRemotePairing` 生成真实配对房间（生产 Worker `code.lemon.vin`）→ Android WebView 加载配对链接显示“等待桌面确认” → 桌面 `decideRemotePairing(accept)` 后状态为 `bridged`、`connections=1`（设备名 Android · Chrome）→ 手机端显示电脑工作区 `lcode-remote-e2e-workspace` → 手机终端 `pwd` 输出 Mac 路径 `/tmp/lcode-remote-e2e.Xov7xO/data/.lcode/workspace/default`，提示符为 Mac 主机名；手机终端写入 `phone-marker.txt` 后在 Mac 文件系统读到内容，证明命令在电脑执行而非手机本机。
+- **会话同步（COPY）端到端通过**：真实 `DeviceSyncServer` 提供快照 → Android 扫码结果分流 → `CopyClient` 拉取 → `DeviceSyncClient` 导入本机服务端 → 打开 `?task=<新sessionId>` 页面，仪器断言同步文本在手机 WebView 中可见；同一 token 二次拉取返回 401，一次性生效。仪器测试：`ScanPairingInstrumentedTest#copyScanResultImportsSnapshot`（需 `scan_url` 与 `expected_text` 参数）。
+- **协议回归**：`pnpm test:remote-control` 76 项通过；device-sync 服务端/导入/SQLite 7 项通过；Android JVM 单测 16 项通过。
+- **真机热更新**：用户实测确认 App 内检查更新 → 下载 → 安装成功，版本显示正确。
+- **相机识别未通过（环境受限）**：模拟器以 `-camera-back imagefile:<二维码.png>` 提供静态图像，CameraX 正常启动但 ML Kit 未识别出二维码，45 秒内未回传结果；尚不能判定是真机问题还是模拟器图像限制，**真机摄像头扫码仍需实测**。
+
 ## 未验证 / 未实现
 
 - 真实模型对话（需要用户自己的模型凭据与网络条件）。
-- **远程控制（MIRROR）真机链路**：扫码 → Worker 配对 → 桌面用户允许 → WSS 数据通道 → 操作电脑工作区。协议与上游 v3.17.4 对齐，但需要真机+真实桌面端做一次端到端回归。
-- **会话同步（COPY）真机链路**：扫码 → 局域网拉取快照 → 写入本机 → 打开会话。已实现，需要真机回归。
+- **真机摄像头扫码与真机端到端复测**：相机识别、MIRROR/COPY 在真实手机上的完整链路；模拟器已验证配对与同步协议、页面与电脑侧执行。
+- 手机镜像的断网重连、后台恢复、多设备并发等边界场景。
 - 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装。
-- 真机覆盖升级与当前已安装版本/签名；本次没有连接设备，无法在这里断言系统安装结果。
-- 低版本 Android（< 8.0）与 x86 设备。
+- 真机热更新已由用户确认成功；不同签名历史包的覆盖升级、低版本 Android（< 8.0）与 x86 设备未验证。
 - 上游全部业务功能的逐项设备验收；不能据构建成功宣称“全功能同步”。

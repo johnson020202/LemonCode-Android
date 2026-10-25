@@ -27,6 +27,7 @@ android {
         targetSdk 35
         versionCode codeText.toInteger()
         versionName nameText
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     buildFeatures {
@@ -103,4 +104,6 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     // 本地单元测试运行在 JVM 上，android.jar 的 org.json 只是抛 not-mocked 的桩。
     testImplementation 'org.json:json:20240303'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
 }
