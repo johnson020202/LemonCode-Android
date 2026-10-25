@@ -34,12 +34,15 @@ node scripts/android/verify-apk.mjs
 - 当前仓库：`johnson020202/LemonCode-Android`（私有）。
 - `.github/workflows/android-release.yml`：打 `android-v*` tag 或手动运行会产出**固定密钥签名**的 release APK，并按需创建 GitHub Release。密钥保存在仓库 Secrets（`ANDROID_KEYSTORE_BASE64` 等），缺少任一项即失败，绝不回退 debug 证书。
 
-## 已验证（2026-10-25，本次发版前重跑后更新）
+## 已验证（2026-10-25）
 
 - 上游基线 `40851a3`（与上游 v3.21.0 同一提交），客户端 `3.17.4`；上游 main 无新增提交，远控协议零差异。
-- `pnpm typecheck`、`pnpm lint`、`scripts/android` 测试、`./gradlew testDebugUnitTest lintDebug assembleDebug`、`verify-apk.mjs` 结果待本次构建后回填。
-- 模拟器实测：安装后自动解包，服务端监听 `127.0.0.1`，`/api/server-info` 返回本机工作区，WebView 加载真实 LCode 界面并进入引导页；截图与浏览器同页对比布局一致（2026-10-22 基线）。
-- 随包 Agent CLI 在应用沙箱内 `--version` 与 `app-server --stdio` 均可启动（2026-10-22 基线）。
+- `pnpm typecheck` 通过；`pnpm lint` 通过（0 warnings / 0 errors）。
+- Node 24.21.0 + JDK 21 构建正式包；`testDebugUnitTest`、`lintDebug`、`assembleRelease` 通过。JUnit 16 项，0 failures / 0 errors；Android lint 0 errors（12 个既有 warning）。
+- 正式包 `versionName=3.17.4`、`versionCode=31704`；签名证书与 `android-v0.1.9` 一致（证书 SHA-256 前缀 `2d8cfdf9`）。
+- APK 内 128 个原生库与运行时链接一致，payload SHA-256 匹配，无 source map。
+- 同步二维码解析使用 Android 8 起可用的 UTF-8 `URLDecoder.decode(String, String)`，不依赖 API 33 的 `Charset` 重载。
+- 发布时必须同时给 `build-standalone.mjs` 和 Gradle 传入 `ANDROID_VERSION_NAME` / `ANDROID_VERSION_CODE`，并核对 APK 实际 `aapt dump badging` 与签名；不能仅凭附件文件名判断包内版本。
 
 ## 未验证 / 未实现
 
@@ -47,5 +50,6 @@ node scripts/android/verify-apk.mjs
 - **远程控制（MIRROR）真机链路**：扫码 → Worker 配对 → 桌面用户允许 → WSS 数据通道 → 操作电脑工作区。协议与上游 v3.17.4 对齐，但需要真机+真实桌面端做一次端到端回归。
 - **会话同步（COPY）真机链路**：扫码 → 局域网拉取快照 → 写入本机 → 打开会话。已实现，需要真机回归。
 - 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装。
-- 覆盖升级（versionCode 1 → 2）、低版本 Android（< 8.0）与 x86 设备。
+- 真机覆盖升级与当前已安装版本/签名；本次没有连接设备，无法在这里断言系统安装结果。
+- 低版本 Android（< 8.0）与 x86 设备。
 - 上游全部业务功能的逐项设备验收；不能据构建成功宣称“全功能同步”。

@@ -132,6 +132,8 @@ public final class ScanActivity extends Activity implements LifecycleOwner {
                 .show();
     }
 
+    // analyze 已声明 @ExperimentalGetImage；lint 会对这里的方法引用重复报 opt-in。
+    @SuppressLint("UnsafeOptInUsageError")
     private void bindCamera() {
         if (cameraBound || isFinishing() || isDestroyed()) return;
         ProcessCameraProvider.getInstance(this).addListener(() -> {
@@ -146,11 +148,7 @@ public final class ScanActivity extends Activity implements LifecycleOwner {
                 ImageAnalysis analysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
-                // Lint UnsafeOptInUsageError 误报：analyze 方法已标 @ExperimentalGetImage，
-                // 但 lint 对方法引用 this::analyze 又独立报一次，这里显式抑制。
-                @SuppressLint("UnsafeOptInUsageError")
-                Runnable bindAnalysis = () -> analysis.setAnalyzer(analysisExecutor, this::analyze);
-                bindAnalysis.run();
+                analysis.setAnalyzer(analysisExecutor, this::analyze);
                 CameraSelector selector = provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
                         ? CameraSelector.DEFAULT_BACK_CAMERA : CameraSelector.DEFAULT_FRONT_CAMERA;
                 provider.unbindAll();

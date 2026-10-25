@@ -1,11 +1,9 @@
 package vin.lemon.android;
 
-import android.annotation.SuppressLint;
-
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 /**
@@ -55,9 +53,6 @@ public final class ScanPayload {
         }
     }
 
-    // Lint NewApi 误报：decode(String, Charset) 虽在 API 33 才加 Charset 重载，
-    // 但这里走的一直是等价的 String 重载（API 1 起就有），且 charset 名固定 UTF-8。
-    @SuppressLint("NewApi")
     private static ScanPayload parseCopy(URI uri) {
         if (!IPV4.matcher(uri.getHost()).matches()) return unknown();
         int port = uri.getPort();
@@ -66,13 +61,22 @@ public final class ScanPayload {
         if (path == null || !path.startsWith(COPY_PATH_PREFIX)) return unknown();
         String encodedId = path.substring(COPY_PATH_PREFIX.length());
         if (encodedId.isEmpty() || encodedId.indexOf('/') >= 0) return unknown();
-        String sessionId = URLDecoder.decode(encodedId, StandardCharsets.UTF_8);
-        if (!SESSION_ID.matcher(sessionId).matches()) return unknown();
+        String sessionId = decodeUtf8(encodedId);
+        if (sessionId == null || !SESSION_ID.matcher(sessionId).matches()) return unknown();
         String fragment = uri.getRawFragment();
         if (fragment == null || !fragment.startsWith("k=")) return unknown();
-        String token = URLDecoder.decode(fragment.substring(2), StandardCharsets.UTF_8);
-        if (!TOKEN.matcher(token).matches()) return unknown();
+        String token = decodeUtf8(fragment.substring(2));
+        if (token == null || !TOKEN.matcher(token).matches()) return unknown();
         return new ScanPayload(Kind.COPY, uri.getHost(), port, sessionId, token, null);
+    }
+
+    /** Android 8–12 没有 URLDecoder.decode(String, Charset)，不能使用 API 33 的重载。 */
+    private static String decodeUtf8(String value) {
+        try {
+            return URLDecoder.decode(value, "UTF-8");
+        } catch (UnsupportedEncodingException | IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private static ScanPayload parseMirror(URI uri, String value) {

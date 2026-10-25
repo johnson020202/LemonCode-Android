@@ -19,6 +19,15 @@ public final class ScanPayloadTest {
         assertFalse(payload.toString().contains(TOKEN));
     }
 
+    @Test public void parsesCopyQrWithEscapedCharacters() {
+        ScanPayload payload = ScanPayload.parse(
+                "http://192.168.1.20:41234/sync/sessions/sess%5Fabc#k=" + TOKEN);
+        assertEquals(ScanPayload.Kind.COPY, payload.kind());
+        assertEquals("sess_abc", payload.sessionId());
+        assertEquals("/sync/sessions/sess_abc", payload.requestPath());
+        assertEquals(TOKEN, payload.token());
+    }
+
     @Test public void parsesMirrorLink() {
         ScanPayload payload = ScanPayload.parse("https://room.example.com/p/room-1#c=capability");
         assertEquals(ScanPayload.Kind.MIRROR, payload.kind());
