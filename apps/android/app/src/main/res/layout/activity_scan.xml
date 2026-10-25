@@ -29,6 +29,14 @@
             android:accessibilityLiveRegion="polite" />
 
         <Button
+            android:id="@+id/scan_gallery"
+            style="@style/Button.LemonCode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_standard"
+            android:text="@string/scan_from_gallery" />
+
+        <Button
             android:id="@+id/scan_cancel"
             style="@style/Button.LemonCode"
             android:layout_width="match_parent"

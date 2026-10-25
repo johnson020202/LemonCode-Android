@@ -58,7 +58,7 @@ public final class ScanPairingInstrumentedTest {
         return value;
     }
 
-    private static MainActivity launchMainActivity() {
+    static MainActivity launchMainActivity() {
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         Intent intent = new Intent(instrumentation.getTargetContext(), MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -67,7 +67,7 @@ public final class ScanPairingInstrumentedTest {
         return main;
     }
 
-    private static ScanActivity launchScanner(MainActivity main) throws Exception {
+    static ScanActivity launchScanner(MainActivity main) throws Exception {
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(
                 ScanActivity.class.getName(), null, false);
@@ -79,7 +79,7 @@ public final class ScanPairingInstrumentedTest {
         return (ScanActivity) scanner;
     }
 
-    private static void awaitRuntimeReady(MainActivity main) throws Exception {
+    static void awaitRuntimeReady(MainActivity main) throws Exception {
         long deadline = System.currentTimeMillis() + 120_000;
         while (System.currentTimeMillis() < deadline) {
             final boolean[] ready = {false};
@@ -91,7 +91,7 @@ public final class ScanPairingInstrumentedTest {
         fail("Local runtime did not become ready");
     }
 
-    private static void awaitWebViewText(MainActivity main, String expectedText, long timeoutMs)
+    static void awaitWebViewText(MainActivity main, String expectedText, long timeoutMs)
             throws Exception {
         long deadline = System.currentTimeMillis() + timeoutMs;
         String lastText = "";
@@ -125,6 +125,141 @@ public final class ScanPairingInstrumentedTest {
             Thread.sleep(250);
         }
         fail("Expected WebView text to contain " + expectedText + ", last=" + lastText);
+    }
+
+    static void clickWebElement(MainActivity main, String javascript) throws Exception {
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<String> error = new java.util.concurrent.atomic.AtomicReference<>();
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            try {
+                java.lang.reflect.Field field = MainActivity.class.getDeclaredField("webView");
+                field.setAccessible(true);
+                WebView webView = (WebView) field.get(main);
+                if (webView == null) {
+                    error.set("WebView is null");
+                    latch.countDown();
+                    return;
+                }
+                webView.evaluateJavascript("(() => { try { " + javascript
+                        + "; return 'ok'; } catch (e) { return String(e); } })()", result -> {
+                    if (!"\"ok\"".equals(result)) error.set(result);
+                    latch.countDown();
+                });
+            } catch (ReflectiveOperationException exception) {
+                error.set(exception.toString());
+                latch.countDown();
+            }
+        });
+        if (!latch.await(10, java.util.concurrent.TimeUnit.SECONDS) || error.get() != null) {
+            fail("Web element action failed: " + error.get());
+        }
+    }
+
+    static void awaitNativeText(MainActivity main, String expectedText, long timeoutMs)
+            throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            final boolean[] found = {false};
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(
+                    () -> found[0] = containsText(dialogRoot(main), expectedText));
+            if (found[0]) return;
+            Thread.sleep(250);
+        }
+        fail("Native text not found: " + expectedText);
+    }
+
+    private static android.view.View dialogRoot(MainActivity main) {
+        try {
+            java.lang.reflect.Field field = MainActivity.class.getDeclaredField("prompt");
+            field.setAccessible(true);
+            android.app.AlertDialog dialog = (android.app.AlertDialog) field.get(main);
+            if (dialog != null && dialog.isShowing()) return dialog.getWindow().getDecorView();
+            return main.findViewById(android.R.id.content);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    private static boolean containsText(android.view.View view, String expected) {
+        if (view instanceof android.widget.TextView
+                && ((android.widget.TextView) view).getText().toString().contains(expected)) {
+            return true;
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                if (containsText(group.getChildAt(i), expected)) return true;
+            }
+        }
+        return false;
+    }
+
+    static void setNativeEditorText(MainActivity main, String value) throws Exception {
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            android.widget.EditText input = findEditText(dialogRoot(main));
+            if (input == null) throw new AssertionError("Remote URL input not found");
+            input.setText(value);
+            latch.countDown();
+        });
+        if (!latch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            fail("Unable to set remote URL input");
+        }
+    }
+
+    static void awaitNativeEditorError(MainActivity main, String expectedText) throws Exception {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            final boolean[] matches = {false};
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                android.widget.EditText input = findEditText(dialogRoot(main));
+                matches[0] = input != null && input.getError() != null
+                        && input.getError().toString().contains(expectedText);
+            });
+            if (matches[0]) return;
+            Thread.sleep(250);
+        }
+        fail("Remote URL error not shown: " + expectedText);
+    }
+
+    private static android.widget.EditText findEditText(android.view.View view) {
+        if (view instanceof android.widget.EditText) return (android.widget.EditText) view;
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                android.widget.EditText found = findEditText(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    static void clickNativeButton(MainActivity main, String label) throws Exception {
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            android.widget.Button button = findButton(dialogRoot(main), label);
+            if (button == null) throw new AssertionError("Button not found: " + label);
+            button.performClick();
+            latch.countDown();
+        });
+        if (!latch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            fail("Unable to click native button: " + label);
+        }
+    }
+
+    private static android.widget.Button findButton(android.view.View view, String label) {
+        if (view instanceof android.widget.Button
+                && ((android.widget.Button) view).getText().toString().equals(label)) {
+            return (android.widget.Button) view;
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                android.widget.Button found = findButton(group.getChildAt(i), label);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static void dismissLocalOnboarding(MainActivity main) throws Exception {
@@ -163,7 +298,7 @@ public final class ScanPairingInstrumentedTest {
         Thread.sleep(1500);
     }
 
-    private static void awaitWebViewUrl(MainActivity main, String expectedPart, long timeoutMs)
+    static void awaitWebViewUrl(MainActivity main, String expectedPart, long timeoutMs)
             throws Exception {
         long deadline = System.currentTimeMillis() + timeoutMs;
         String lastUrl = null;

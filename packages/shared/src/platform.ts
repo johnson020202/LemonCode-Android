@@ -603,6 +603,13 @@ export interface IPlatformService {
   /** 释放当前窗口里已创建的远程 session */
   disposeRemoteSession(sessionId: string): Promise<void>;
 
+  /** Android 本机欢迎页打开系统扫码页；其他平台或远程镜像不提供。 */
+  scanRemoteConnection?(): void;
+
+  /** Android 本机欢迎页打开原生完整配对/同步链接输入框；其他平台不提供。 */
+  enterRemoteConnectionUrl?(): void;
+
+
   /**
    * 手机远程控制（CF Workers 隧道）：开启配对等待并出站注册房间；仅 Desktop 实现。
    * target 是手机要镜像的远端 workspace（Renderer 是该业务状态的所有者，由它提供给 Main 调度）。

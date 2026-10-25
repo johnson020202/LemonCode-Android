@@ -54,8 +54,14 @@ test("standalone WebView keeps security boundaries", async () => {
     resolve(root, "apps/android/app/src/main/java/vin/lemon/android/MainActivity.java"),
     "utf8",
   );
-  // 只访问本机运行时 origin；无原生 JS 桥、无 TLS 忽略、不授予网页媒体权限。
-  assert.match(activity, /UrlPolicy\.localNavigation\(origin, url\)/u);
+  // 只访问本机运行时 origin；无通用原生 JS 桥、无 TLS 忽略、不授予网页媒体权限。
+  assert.match(activity, /UrlPolicy\.localNavigation\(activeOrigin, url\)/u);
+  assert.ok(activity.includes("UrlPolicy.isInApp(origin, target)"));
+  assert.ok(activity.includes("origin.allows(request.getUrl().toString())"));
+  // 欢迎页仅允许受限命令消息，不允许任意网页或配对密钥进入原生层。
+  assert.ok(activity.includes("WebViewFeature.WEB_MESSAGE_LISTENER"));
+  assert.ok(activity.includes("LocalBridgePolicy.allows"));
+  assert.ok(activity.includes("message.getType() != WebMessageCompat.TYPE_STRING"));
   assert.ok(activity.includes("handler.cancel();"));
   assert.ok(activity.includes("MIXED_CONTENT_NEVER_ALLOW"));
   assert.ok(activity.includes("request.deny();"));

@@ -14,6 +14,7 @@ import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Message;
+import android.text.InputType;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -37,11 +38,16 @@ import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
+
+import androidx.webkit.WebMessageCompat;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
 import java.io.File;
 import java.io.IOException;
@@ -296,7 +302,7 @@ public final class MainActivity extends Activity {
                     previousOrigin.setText(getString(R.string.local_origin, activeOrigin.origin()));
                     status.setText(R.string.runtime_ready);
                     starter = null;
-                    launchRuntime();
+                    // 运行时准备完成不等于用户选择了工作区：停留在首页，等待主动操作。
                 });
             } catch (Exception exception) {
                 final String message = exception.getMessage() == null
@@ -392,6 +398,21 @@ public final class MainActivity extends Activity {
         ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setAllowContentAccess(false);
         ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setAllowFileAccess(false);
         ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setBlockNetworkLoads(false);
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(view, "lemonAndroid",
+                    java.util.Collections.singleton(origin.origin()),
+                    (source, message, sourceOrigin, isMainFrame, replyProxy) -> {
+                        if (source != webView || message.getType() != WebMessageCompat.TYPE_STRING) return;
+                        String command = message.getData();
+                        if (!LocalBridgePolicy.allows(origin, command, source.getUrl(),
+                                String.valueOf(sourceOrigin), isMainFrame)) return;
+                        // WebMessageListener 可能在 Binder 线程回调；原生 UI 操作统一切回主线程。
+                        runOnUiThread(() -> {
+                            if ("scan".equals(command)) startScan();
+                            else showRemoteUrlDialog();
+                        });
+                    });
+        }
         view.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView ignored, WebResourceRequest request) {
                 String scheme = request.getUrl().getScheme();
@@ -519,6 +540,46 @@ public final class MainActivity extends Activity {
             toast(R.string.navigation_blocked);
         }
         return true;
+    }
+
+    private void showRemoteUrlDialog() {
+        if (activeOrigin == null) {
+            toast(R.string.scan_runtime_not_ready);
+            startRuntime();
+            return;
+        }
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setHint(R.string.remote_url_hint);
+        input.setSingleLine(false);
+        input.setMinLines(3);
+        input.setMaxLines(6);
+        input.setPadding(getResources().getDimensionPixelSize(R.dimen.space_standard),
+                0, getResources().getDimensionPixelSize(R.dimen.space_standard), 0);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.remote_url_title)
+                .setMessage(R.string.remote_url_message)
+                .setView(input)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.remote_url_connect, null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                String value = input.getText().toString().trim();
+                if (ScanPayload.parse(value).kind() == ScanPayload.Kind.UNKNOWN) {
+                    input.setError(getString(R.string.remote_url_invalid));
+                    input.requestFocus();
+                    return;
+                }
+                dialog.dismiss();
+                handleScan(value);
+            });
+            input.requestFocus();
+            dialog.getWindow().setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        });
+        showPrompt(dialog);
     }
 
     private void startScan() {
@@ -765,9 +826,12 @@ public final class MainActivity extends Activity {
     }
 
     private void showPrompt(AlertDialog.Builder builder) {
+        showPrompt(builder.create());
+    }
+
+    private void showPrompt(AlertDialog next) {
         if (isFinishing() || isDestroyed()) return;
         if (prompt != null && prompt.isShowing()) return;
-        AlertDialog next = builder.create();
         prompt = next;
         next.setOnDismissListener(dialog -> {
             if (prompt == next) prompt = null;

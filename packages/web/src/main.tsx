@@ -36,6 +36,13 @@ import type { MobileDataServices } from "./remote/pairingSockets.js";
 import { WEB_DEFAULT_THEME, resolveWebInitialTheme } from "./webThemeSeed.js";
 import { saveWebFile } from "./saveWebFile.js";
 
+// AndroidX WebView 的受限本机消息通道；原生侧同时校验主框架和回环来源。
+declare global {
+  interface Window {
+    lemonAndroid?: { postMessage(message: string): void };
+  }
+}
+
 function resolveWebThemePreference(defaultTheme: Theme = WEB_DEFAULT_THEME): Theme {
   const saved = localStorage.getItem("lcode-theme");
   return resolveWebInitialTheme({ storedTheme: saved, defaultTheme });
@@ -234,6 +241,17 @@ function createWebPlatform(): IPlatformService {
     },
     cancelPendingRemoteConnection: (_requestId?: string) => Promise.resolve(),
     disposeRemoteSession: () => Promise.resolve(),
+    ...(window.location.hostname === "127.0.0.1" &&
+    typeof window.lemonAndroid?.postMessage === "function"
+      ? {
+          scanRemoteConnection: () => {
+            window.lemonAndroid!.postMessage("scan");
+          },
+          enterRemoteConnectionUrl: () => {
+            window.lemonAndroid!.postMessage("url");
+          },
+        }
+      : {}),
     isDockerAvailable: () => Promise.resolve(false),
     listWSLDistros: () => Promise.resolve([]),
     listDockerContainers: () => Promise.resolve([]),

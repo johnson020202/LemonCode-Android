@@ -12,6 +12,16 @@
     <string name="scan_hint">扫描电脑上的二维码：远程控制（操作电脑工作区）或会话同步（拉取单条对话到本机）</string>
     <string name="scan_unknown">无法识别的二维码，请扫描电脑上 LemonCode 生成的远控或同步二维码。</string>
     <string name="scan_cancel">取消</string>
+    <string name="scan_from_gallery">从相册选择二维码</string>
+    <string name="scan_gallery_loading">正在识别二维码…</string>
+    <string name="scan_camera_permission_gallery_hint">未授予相机权限。你仍可从相册选择二维码截图识别。</string>
+    <string name="scan_gallery_empty">这张图片中没有识别到二维码，请选择清晰的完整二维码截图。</string>
+    <string name="scan_gallery_failed">无法读取这张图片，请重新选择。</string>
+    <string name="remote_url_title">填写远程网址</string>
+    <string name="remote_url_message">粘贴电脑上生成的完整配对链接，或局域网会话同步链接。</string>
+    <string name="remote_url_hint">https://…/p/…#c=… 或 http://…/sync/sessions/…#k=…</string>
+    <string name="remote_url_connect">连接</string>
+    <string name="remote_url_invalid">链接不完整或格式不正确，请粘贴电脑生成的完整链接。</string>
     <string name="scan_ok">知道了</string>
     <string name="scan_camera_required_title">需要相机权限</string>
     <string name="scan_camera_required_message">扫码需要相机权限。拒绝后仍可使用本机客户端，也可以稍后重新扫码。</string>

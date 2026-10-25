@@ -36,10 +36,10 @@ node scripts/android/verify-apk.mjs
 
 ## 已验证（2026-10-25）
 
-- 上游基线 `40851a3`（与上游 v3.21.0 同一提交），客户端 `3.17.4`；上游 main 无新增提交，远控协议零差异。
+- 上游基线 `40851a3`（与上游 v3.21.0 同一提交），客户端 `3.17.5`；上游 main 无新增提交，远控协议零差异。
 - `pnpm typecheck` 通过；`pnpm lint` 通过（0 warnings / 0 errors）。
 - Node 24.21.0 + JDK 21 构建正式包；`testDebugUnitTest`、`lintDebug`、`assembleRelease` 通过。JUnit 16 项，0 failures / 0 errors；Android lint 0 errors（12 个既有 warning）。
-- 正式包 `versionName=3.17.4`、`versionCode=31704`；签名证书与 `android-v0.1.9` 一致（证书 SHA-256 前缀 `2d8cfdf9`）。
+- 正式包 `versionName=3.17.5`、`versionCode=31705`；签名证书与 `android-v0.1.9` 一致（证书 SHA-256 前缀 `2d8cfdf9`）。
 - APK 内 128 个原生库与运行时链接一致，payload SHA-256 匹配，无 source map。
 - 同步二维码解析使用 Android 8 起可用的 UTF-8 `URLDecoder.decode(String, String)`，不依赖 API 33 的 `Charset` 重载。
 - 发布时必须同时给 `build-standalone.mjs` 和 Gradle 传入 `ANDROID_VERSION_NAME` / `ANDROID_VERSION_CODE`，并核对 APK 实际 `aapt dump badging` 与签名；不能仅凭附件文件名判断包内版本。
@@ -51,6 +51,10 @@ node scripts/android/verify-apk.mjs
 - **协议回归**：`pnpm test:remote-control` 76 项通过；device-sync 服务端/导入/SQLite 7 项通过；Android JVM 单测 16 项通过。
 - **真机热更新**：用户实测确认 App 内检查更新 → 下载 → 安装成功，版本显示正确。
 - **相机识别未通过（环境受限）**：模拟器以 `-camera-back imagefile:<二维码.png>` 提供静态图像，CameraX 正常启动但 ML Kit 未识别出二维码，45 秒内未回传结果；尚不能判定是真机问题还是模拟器图像限制，**真机摄像头扫码仍需实测**。
+- **相册截图识别已通过（3.17.5）**：`ScanHomeAndGalleryInstrumentedTest#galleryScreenshotIsRecognized` 在模拟器上通过系统图片选择器 URI 读取真实二维码 PNG，ML Kit 解码成功并回传 MainActivity，页面进入配对 URL。不依赖相机权限。
+- **首页选择停留已通过（3.17.5）**：`homeWaitsForUserChoice` 断言运行时准备完成后 home panel 仍可见、WebView 未创建，点击“打开工作区”才进入本机页面。
+- **欢迎页入口与网址校验已通过（3.17.5）**：`welcomeRemoteEntriesAndUrlValidation` 验证欢迎页扫码按钮打开原生 ScanActivity，网址输入对话框拒绝不完整 URL 并显示错误，合法链接进入配对流程。仪器测试与二维码图片只在 `androidTest` 测试 APK，release APK 不含这些入口。
+- **安全边界**：欢迎页原生消息仅允许当前 App 回环 origin 的 `scan`/`url` 两个命令，主框架与来源 origin 双重校验；不引入 `addJavascriptInterface`，配对密钥不回传 React。
 
 ## 未验证 / 未实现
 

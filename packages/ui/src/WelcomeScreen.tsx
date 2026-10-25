@@ -5,7 +5,7 @@
  * 通过 useOAuth hook 驱动 OAuth 流程。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LoaderIcon, TriangleAlertIcon } from "lucide-react";
+import { LoaderIcon, QrCodeIcon, TriangleAlertIcon } from "lucide-react";
 import {
   type OAuthProviderMeta,
   TID_LOGIN_USE_API_KEY_BUTTON,
@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "./components/ui/alert.js";
 import { Button } from "./components/ui/button.js";
 import { LCodeAboutLogo } from "@/components/ui/LCodeAboutLogo.js";
 import { useOAuth } from "./hooks/useOAuth.js";
+import { usePlatform } from "./hooks/usePlatform.js";
 import { useLCodeIntl } from "./i18n/IntlProvider.js";
 import { LoginApiKeyForm } from "./login/LoginApiKeyForm.js";
 import { ThemeHeroVisual } from "./openWorkspacePageThemeHero.js";
@@ -65,6 +66,9 @@ function shouldCompleteLoginFromExistingUser(params: {
 
 function LoginPanel({ active, onComplete }: LoginPanelProps) {
   const { intl } = useLCodeIntl();
+  const platform = usePlatform();
+  const scanRemoteConnection = platform.scanRemoteConnection;
+  const enterRemoteConnectionUrl = platform.enterRemoteConnectionUrl;
   const { startLogin, cancel, reset, status, error, providers, pendingProvider, refreshProviders } =
     useOAuth();
   const user = useLCodeStore((s) => s.user);
@@ -275,6 +279,32 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
             失败期间统一由下方失败块接管（重新登录/取消），渠道列表等错误清掉后再回来。 */}
         {status === "idle" && !oauthError && loginMode === "providers" && (
           <div className="space-y-2">
+            {scanRemoteConnection && enterRemoteConnectionUrl ? (
+              <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
+                <Button
+                  variant="default"
+                  className="h-10 w-full gap-2 text-ui-base"
+                  size="lg"
+                  data-testid="login-scan-remote"
+                  onClick={scanRemoteConnection}
+                >
+                  <QrCodeIcon className="size-4" aria-hidden="true" />
+                  {intl.formatMessage({ id: "login.remote.scan" })}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-10 w-full text-ui-base"
+                  size="lg"
+                  data-testid="login-enter-remote-url"
+                  onClick={enterRemoteConnectionUrl}
+                >
+                  {intl.formatMessage({ id: "login.remote.enterUrl" })}
+                </Button>
+                <p className="text-center text-ui-sm text-foreground-subtle">
+                  {intl.formatMessage({ id: "login.remote.hint" })}
+                </p>
+              </div>
+            ) : null}
             <Button
               variant="default"
               className="h-10 w-full text-ui-base"
