@@ -4882,6 +4882,24 @@ const enUS: Record<string, string> = {
   "chat.sessionUsage.partial": "At least {total} tokens; some subagent usage is unavailable",
   "chat.sessionUsage.partialTitle": "Known tokens (some subagent usage unavailable)",
   "chat.sessionUsage.unavailable": "Session token usage unavailable",
+  "chat.tokenUsageStatusBar.title": "Token usage status bar",
+  "chat.tokenUsageStatusBar.speed": "Speed",
+  "chat.tokenUsageStatusBar.context": "Context",
+  "chat.tokenUsageStatusBar.session": "Session",
+  "chat.tokenUsageStatusBar.cache": "Cache read",
+  "chat.tokenUsageStatusBar.cacheRead": "Cache reads",
+  "chat.tokenUsageStatusBar.cacheWrite": "Cache writes",
+  "chat.tokenUsageStatusBar.request": "Latest request",
+  "chat.tokenUsageStatusBar.requestOutput": "Request output tokens",
+  "chat.tokenUsageStatusBar.requestDuration": "Request duration",
+  "chat.tokenUsageStatusBar.requestScope":
+    "Latest completed request in this turn only. Duration includes first-token wait, excluding retry backoff and tool execution.",
+  "chat.tokenUsageStatusBar.subagents": "Subagents",
+  "chat.tokenUsageStatusBar.pending": "Awaiting usage",
+  "chat.tokenUsageStatusBar.partial":
+    "Some subagent usage is unavailable. Only known usage is shown.",
+  "chat.tokenUsageStatusBar.accounting":
+    "Total = input + output. Cache tokens are already included in input. Live estimates are separate from settled usage.",
   "chat.contextUsage.title": "Context windows",
   "chat.contextUsageDescription":
     "Prompt text, tool calls, and responses all share this context window.",

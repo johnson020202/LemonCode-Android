@@ -15,7 +15,16 @@
  * 提交时由宿主（SessionPane）把冻结选择随 Submission 一起发送。
  * 三件套不能全部门控在 config!==null 上——草稿态会整体不渲染。
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   getModelProviderFamilySpec,
@@ -79,6 +88,9 @@ import { logger } from "@/logger.js";
 import { useLiveOutputRate } from "@/v4/composer/useLiveOutputRate.js";
 import { readSessionOutputSpeed } from "@/v4/composer/sessionOutputSpeed.js";
 import { useChildSessionTokenStats } from "@/v4/composer/useChildSessionTokenStats.js";
+import { TokenUsageStatusBar } from "@/v4/composer/TokenUsageStatusBar.js";
+import type { SessionOutputSpeed } from "@/v4/composer/sessionOutputSpeed.js";
+import { useComposerStatusBarSlot } from "@/v4/composer/composerStatusBarSlot.js";
 import { collectChildSessionIds } from "@/v4/composer/sessionTokenStats.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 import { useCodingPlanEntitlements } from "@/settings/model-provider-section/useCodingPlanEntitlements.js";
@@ -396,6 +408,7 @@ function V4ComposerModelControlsImpl({
     [sessionSnapshot?.subagents, sessionSnapshot?.workflowRuns, observedSessionId],
   );
   const childStats = useChildSessionTokenStats(layer, childIds);
+  const statusBarSlot = useComposerStatusBarSlot();
   const displayProvider = provider ?? LCODE_AGENT_PROVIDER;
   // 配置面读取：workspace 缺省目录（taskId=null），不读旧会话态。
   const { error: configOptionsError } = useToolbarConfigOptions(
@@ -1027,23 +1040,35 @@ function V4ComposerModelControlsImpl({
         data-usage-max={usage?.contextWindow?.maxTokens ?? ""}
         className="hidden"
       />
-      <ChatContextUsage
-        codingPlanUsageRemaining={codingPlanUsageRemaining}
-        taskUsage={taskUsage}
-        sessionUsage={usage?.cumulative}
-        liveOutputRate={liveOutputRate}
+      <ComposerTokenUsageStatusBar
+        slot={statusBarSlot}
+        sessionSnapshot={sessionSnapshot}
         outputSpeed={outputSpeed}
-        childUsage={childStats.usage}
-        childCount={childStats.childCount}
-        childCurrentOutputTokens={childStats.currentOutputTokens}
-        childLiveOutputRate={childStats.liveOutputRate}
-        childOutputSpeed={childStats.outputSpeed}
-        startPlanBalance={contextStartPlanBalance}
-        selectedProvider={displayProvider}
-        intl={intl}
-        locale={locale}
-        onSendCompressionCommand={onSendCompressionCommand}
-        compressionDisabled={disabled || recoveryPending}
+        childStats={childStats}
+        // 只有拿到真实上下文用量时才让状态栏为「上下文」项占位；
+        // ChatContextUsage 在无量时自己返回 null，空壳会挤出一段空白。
+        contextAvailable={taskUsage !== null}
+        contextUsage={
+          <ChatContextUsage
+            codingPlanUsageRemaining={codingPlanUsageRemaining}
+            taskUsage={taskUsage}
+            sessionUsage={usage?.cumulative}
+            liveOutputRate={liveOutputRate}
+            outputSpeed={outputSpeed}
+            childUsage={childStats.usage}
+            childCount={childStats.childCount}
+            childCurrentOutputTokens={childStats.currentOutputTokens}
+            childLiveOutputRate={childStats.liveOutputRate}
+            childOutputSpeed={childStats.outputSpeed}
+            startPlanBalance={contextStartPlanBalance}
+            selectedProvider={displayProvider}
+            intl={intl}
+            locale={locale}
+            onSendCompressionCommand={onSendCompressionCommand}
+            compressionDisabled={disabled || recoveryPending}
+            summaryMode="context"
+          />
+        }
       />
       {modelSelectionState.status === "error" && modelSelectionReload ? (
         <Button
@@ -1128,4 +1153,41 @@ function V4ComposerModelControlsImpl({
 }
 
 export const V4ComposerModelControls = memo(V4ComposerModelControlsImpl);
+
+/**
+ * Token 用量状态栏的挂载桥：有编辑器插槽就 portal 到输入框底部，
+ * 没有插槽（草稿态、只读面板、测试渲染）就退回工具栏原位。
+ */
+function ComposerTokenUsageStatusBar({
+  slot,
+  sessionSnapshot,
+  outputSpeed,
+  childStats,
+  contextAvailable,
+  contextUsage,
+}: {
+  slot: HTMLDivElement | null;
+  sessionSnapshot: ConversationSnapshot | null | undefined;
+  outputSpeed: SessionOutputSpeed;
+  childStats: ReturnType<typeof useChildSessionTokenStats>;
+  contextAvailable: boolean;
+  contextUsage: ReactNode;
+}) {
+  const bar = (
+    <TokenUsageStatusBar
+      snapshot={sessionSnapshot}
+      outputSpeed={outputSpeed}
+      childUsage={childStats.usage}
+      childCount={childStats.childCount}
+      childCurrentOutputTokens={childStats.currentOutputTokens}
+      childOutputSpeed={childStats.outputSpeed}
+      contextControl={contextUsage}
+      contextAvailable={contextAvailable}
+    />
+  );
+  // 没有编辑器插槽时退回工具栏原位，保证回放/只读宿主也能看到同一份读数。
+  if (slot === null) return bar;
+  return createPortal(bar, slot);
+}
+
 import { isApiKeyAccess } from "@lcode/provider";

@@ -248,6 +248,7 @@ export function ChatContextUsage({
   selectedProvider: _selectedProvider,
   intl,
   locale,
+  summaryMode = "summary",
 }: {
   codingPlanUsageRemaining?: ChatCodingPlanUsageRemainingConfig;
   startPlanBalance?: ChatStartPlanBalanceConfig;
@@ -270,6 +271,12 @@ export function ChatContextUsage({
   locale: string;
   onSendCompressionCommand?: (command: string) => void;
   compressionDisabled?: boolean;
+  /**
+   * "summary"：原有形态，触发器内显示会话总量与速度。
+   * "context"：只显示上下文占比。Token 用量状态栏已单独展示会话与速度时用这个，
+   * 避免同一行出现两遍相同数字。
+   */
+  summaryMode?: "summary" | "context";
 }) {
   const isWorkspaceVisible = useOptionalTabStore(
     (state) => !state.tabs.some((tab) => tab.id === state.activeTabId && isSettingsTab(tab)),
@@ -945,7 +952,20 @@ export function ChatContextUsage({
             data-chat-toolbar-popover-trigger="true"
             data-testid={TID_CHAT_CONTEXT_USAGE_TRIGGER}
             summary={
-              sessionTokenTotal === null && !hasOutputSpeed ? undefined : (
+              summaryMode === "context" ? (
+                // 状态栏模式只留占比：会话总量与速度由状态栏自己的指标承担，
+                // 这里再放一遍会让同一行重复两套数字。
+                compactTokenUsageLabel === null ? undefined : (
+                  <span className="inline-flex min-w-0 items-center gap-1 font-mono text-ui-xs tabular-nums">
+                    <span className="text-foreground-subtle">
+                      {intl.formatMessage({ id: "chat.tokenUsageStatusBar.context" })}
+                    </span>
+                    <span>
+                      {percentageFormatter.format(usagePercent)}
+                    </span>
+                  </span>
+                )
+              ) : sessionTokenTotal === null && !hasOutputSpeed ? undefined : (
                 <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-ui-xs tabular-nums">
                   {sessionTokenTotal === null ? null : (
                     <span>

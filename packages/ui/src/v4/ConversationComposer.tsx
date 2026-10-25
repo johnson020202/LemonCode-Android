@@ -137,6 +137,7 @@ import {
   shouldReverseFollowupDeliveryForPointer,
 } from "@/v4/composer/followupModeSettings.js";
 import { isAppleKeyboardPlatform } from "@/lib/keyboardShortcuts.js";
+import { ComposerStatusBarSlotContext } from "@/v4/composer/composerStatusBarSlot.js";
 import { usePrimaryFollowupModifier } from "@/v4/composer/usePrimaryFollowupModifier.js";
 import { consumeV4ComposerDraftWorkspaceTransferRequest } from "@/v4/composer/composerDraftWorkspaceTransfer.js";
 import { useComposerAttachments } from "@/v4/composer/useComposerAttachments.js";
@@ -646,6 +647,15 @@ function ConversationComposerImpl({
   const textRef = useRef("");
   const contentRevisionRef = useRef(0);
   const pendingRef = useRef(false);
+  // 状态栏宿主节点：编辑器挂载后由 ref 回调写入，工具栏据此把状态栏 portal 到输入框底部。
+  const [statusBarSlot, setStatusBarSlot] = useState<HTMLDivElement | null>(null);
+  const statusBarConfig = useMemo(
+    () =>
+      draftMode
+        ? null
+        : { position: "inside" as const, slotRef: setStatusBarSlot },
+    [draftMode],
+  );
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   // 这条线断过一次：composer 原本读一个平行的 sharedContextImport prop，而 SessionPane 从没
@@ -2745,7 +2755,8 @@ function ConversationComposerImpl({
             modelSelectionView={modelSelectionView}
           />
         ) : null}
-        <ChatPromptEditor
+        <ComposerStatusBarSlotContext.Provider value={statusBarSlot}>
+          <ChatPromptEditor
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}
           fileWorkspacePath={executionWorkspacePath}
@@ -2792,7 +2803,9 @@ function ConversationComposerImpl({
           onSubmit={handleEditorSubmit}
           onWhiteboardMentionSelected={attachmentsApi.handleWhiteboardMentionSelected}
           onPaste={attachmentsApi.handlePaste}
+          statusBar={statusBarConfig}
         />
+        </ComposerStatusBarSlotContext.Provider>
         {attachmentsApi.attachmentError ? (
           <p className="flex items-start gap-2 p-3 text-ui-base text-warning">
             <InfoIcon className="mt-0.5 size-4 shrink-0" />

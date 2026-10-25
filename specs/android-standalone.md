@@ -59,3 +59,22 @@ Android 应用私有目录同时存在两个名字：`/data/user/0/<pkg>` 与 `/
 2. Android 单测、lint 与 `verify-apk.mjs` 通过：manifest 链接与 APK 内原生库一一对应，payload 摘要匹配，无 source map。
 3. 设备/模拟器验证：安装即启动、本机服务端返回 `/api/server-info`、WebView 加载真实界面、Agent 可启动。
 4. 未实现项必须在文档中保留，不能用编译成功替代功能验收。
+
+## Token 用量状态栏
+
+上游 3.19.x 在输入框底部常驻一条用量状态栏（速度、上下文、会话累计、缓存、最近请求、子代理）。本仓库源码基线是 3.17.4，没有这个组件，所以 Android 端此前看不到这些读数——不是数据缺失，而是界面缺失。现已按上游口径在共享 UI 内补齐，Android 与 Web 远端使用同一实现。
+
+- **数据来源**：全部取自 `ConversationSnapshot`（`usage.cumulative` / `contextWindow` / `modelOutput.lastRequest`）与 renderer 本地的可见输出采样。CLI 在设备内产生这些事实，因此无需为 Android 另开通道，也不读任何 Electron 专属桥。
+- **位置**：状态栏挂在 `ChatPromptEditor` 的 `data-composer-statusbar-slot="inside"` 插槽，用 portal 把工具栏的内容渲染到输入框底部；没有插槽时（草稿态、只读面板、测试渲染）退回工具栏原位。
+- **所有者**：派生规则在 `packages/ui/src/v4/composer/tokenUsageStatusBarModel.ts`（会话合计、最近请求有效性、缓存可见性）；组件只做展示，不新建第二份 Token 账本。
+- **口径**：合计 = 主会话已结算 + 直属子代理已结算，任一侧未知时前缀 `≥`；最近请求只认本轮最后一行所属的请求，且必须有正输出与正耗时，换轮即失效；缓存读/写都为 0 时不显示该项。
+- **空态**：没有任何可展示项时整条不渲染。上下文入口必须同时满足「有真实上下文用量」，否则 `ChatContextUsage` 返回 null 会留下空壳占位。
+- **交互**：鼠标悬停临时展开、点击固定；触摸设备无 hover，点按直接固定，保证手机上能打开明细。
+- **验收**：`TokenUsageStatusBar.test.ts` 锁定上述口径与触摸路径；真机上 `[data-testid="token-usage-statusbar"]` 在无数据时不存在，有数据时包含 `token-usage-speed` 等指标。
+
+## 供应商 API 格式顺序
+
+「API 格式」下拉按实际使用频率排序：`openai-chat-completions`、`openai-responses`、`anthropic-messages`。
+
+- 只决定下拉展示顺序，不改 `api.type` 的语义默认值——运行时空值仍回退 `anthropic-messages`。若把 UI 默认值改成 OpenAI 而运行时仍按 Anthropic 解析，界面显示与实际请求会不一致。
+- 保存路径（`ProviderDraftSave`）的脏检查同样以 `anthropic-messages` 为空值基线，改动顺序不影响"是否改过协议"的判定。

@@ -66,6 +66,7 @@ export function ChatPromptEditor({
   topContent,
   leadingActions,
   trailingActions,
+  statusBar,
   attachmentAction,
   betweenCancelAndSubmitAction,
   submitControl,
@@ -125,6 +126,11 @@ export function ChatPromptEditor({
   leadingActions?: ReactNode;
   /** 配置控件属于非主动作滚动区，宽屏仍靠右；submitControl 只承载固定的发送/停止。 */
   trailingActions?: ReactNode;
+  /**
+   * Token 用量状态栏插槽：只声明位置并提供宿主节点，内容由持有会话数据的上层
+   * 用 portal 渲染进来，避免把 snapshot/usage 一路透传到编辑器。
+   */
+  statusBar?: { position: "inside" | "above" | "below"; slotRef: (node: HTMLDivElement | null) => void } | null;
   attachmentAction?: {
     label: string;
     onSelect: () => void;
@@ -380,6 +386,9 @@ export function ChatPromptEditor({
         ) : null}
 
         {topContent}
+        {statusBar?.position === "above" ? (
+          <div className="-mt-2" ref={statusBar.slotRef} data-composer-statusbar-slot="above" />
+        ) : null}
         <LexicalChatInput
           placeholder={placeholder}
           disabled={disabled}
@@ -489,7 +498,13 @@ export function ChatPromptEditor({
             )}
           </div>
         </div>
+        {statusBar?.position === "inside" ? (
+          <div className="-mb-1" ref={statusBar.slotRef} data-composer-statusbar-slot="inside" />
+        ) : null}
       </div>
+      {statusBar?.position === "below" ? (
+        <div className="mt-1 px-1" ref={statusBar.slotRef} data-composer-statusbar-slot="below" />
+      ) : null}
     </form>
   );
 }

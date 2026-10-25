@@ -13,10 +13,13 @@ import {
   testId,
 } from "@lcode/shared";
 
+// 展示顺序按实际使用频率排：OpenAI 兼容协议（尤其 /chat/completions）是第三方中转与
+// 自建网关最常见的接入方式，放在最前面，减少每次新建供应商都要下拉翻找。
+// 这里只决定下拉顺序，不改 api.type 的语义默认值——运行时空值仍回退 anthropic-messages。
 const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
-  "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "anthropic-messages",
 ];
 
 const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderApiType, string> = {
