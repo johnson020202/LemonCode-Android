@@ -11,7 +11,6 @@ import {
   DATA_SOCKET_RETRY_DEADLINE_MS,
   DATA_SOCKET_RETRY_DELAY_MS,
   DATA_SOCKET_RETRY_KEYS,
-  scheduleMirrorReconnectReload,
   shouldFallbackToPairingCapability,
 } from "./mirrorReconnect.js";
 import {
@@ -137,9 +136,11 @@ function outcomeToFailureKey(
 export function MobilePairingPage({
   route,
   onConnected,
+  onDisconnected,
 }: {
   route: PairingDeepLinkRoute;
   onConnected: (services: MobileDataServices) => void;
+  onDisconnected: (key: PairingFailureKey) => void;
 }) {
   const [phase, setPhase] = useState<PairingPhase>({ kind: "connecting" });
   const locale = resolvePairingLocale();
@@ -163,8 +164,7 @@ export function MobilePairingPage({
       try {
         const services = await connectBridgedDataSocket(
           buildDataSocketUrl(roomId, deviceCredential),
-          // 接管后断链:网络类死亡在 Worker 宽限窗口内自动刷新重连(§3.3),
-          // 刷新后回到本页凭已保存设备凭据走 resumed 重连,bridging 界面即重连提示
+          // 断线只交给同一个页面的连接所有者；整页 reload 会清空工作区、草稿和订阅。
           (key) => {
             if (!handedOff) return;
             if (CREDENTIAL_DEATH_KEYS.has(key))
@@ -172,7 +172,7 @@ export function MobilePairingPage({
                 key === "revoked" ? undefined : roomId,
                 deviceCredential,
               );
-            scheduleMirrorReconnectReload(key);
+            onDisconnected(key);
           },
         );
         if (!disposed) {

@@ -7,10 +7,19 @@ import java.net.URISyntaxException;
 final class LocalBridgePolicy {
     private LocalBridgePolicy() {}
 
+    /**
+     * 允许的命令固定为：扫码、手输地址、发送任务通知。
+     * {@code notify} 带内容参数，由 {@link NotificationPayload} 再校验一次。
+     */
+    static boolean isSupportedCommand(String command) {
+        return "scan".equals(command) || "url".equals(command)
+                || "notify".equals(command);
+    }
+
     static boolean allows(UrlPolicy.LocalOrigin origin, String command,
                           String pageUrl, String sourceOrigin, boolean isMainFrame) {
         if (!isMainFrame || origin == null || !origin.allows(pageUrl)) return false;
-        if (!"scan".equals(command) && !"url".equals(command)) return false;
+        if (!isSupportedCommand(command)) return false;
         try {
             URI source = new URI(sourceOrigin);
             String path = source.getRawPath();

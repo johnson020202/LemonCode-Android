@@ -67,8 +67,10 @@ import java.util.Set;
 public final class MainActivity extends Activity {
     private static final String PREFERENCES = "runtime";
     private static final String LAST_ORIGIN = "last_origin";
+    private static final String LAST_PAGE = "last_page";
     private static final int FILE_PICKER = 31;
     private static final int SCAN_REQUEST = 32;
+    private static final int NOTIFICATION_PERMISSION = 33;
     private static final int MAX_UPLOAD_FILES = 32;
 
     private SharedPreferences preferences;
@@ -93,11 +95,14 @@ public final class MainActivity extends Activity {
     private OnBackInvokedCallback backCallback;
     private Thread starter;
     private boolean syncing;
+    private String pendingRestore;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+        // 仅恢复白名单页面；新运行时端口就绪后自动打开一次，失败则留在选择页。
+        pendingRestore = preferences.getString(LAST_PAGE, null);
         homePanel = findViewById(R.id.home_panel);
         webPanel = findViewById(R.id.web_panel);
         webContainer = findViewById(R.id.web_container);
@@ -135,6 +140,25 @@ public final class MainActivity extends Activity {
         startRuntime();
         // 启动后静默检查一次；只有真正发现新版本才提示，不打断使用。
         checkForUpdates(false);
+        requestNotificationPermission();
+    }
+
+    /**
+     * 任务提醒所需的通知权限。用户拒绝后不重复打扰：任务本身在应用内仍正常完成，
+     * 只是不再发系统通知。
+     */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) {
+            TaskNotifications.ensureChannels(this);
+            return;
+        }
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            TaskNotifications.ensureChannels(this);
+            return;
+        }
+        requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},
+                NOTIFICATION_PERMISSION);
     }
 
     /**
@@ -302,7 +326,12 @@ public final class MainActivity extends Activity {
                     previousOrigin.setText(getString(R.string.local_origin, activeOrigin.origin()));
                     status.setText(R.string.runtime_ready);
                     starter = null;
-                    // 运行时准备完成不等于用户选择了工作区：停留在首页，等待主动操作。
+                    // 首次使用仍停留选择页；只有此前确实进入过工作区才恢复一次。
+                    if (pendingRestore != null) {
+                        String target = RestorablePage.restore(activeOrigin, pendingRestore);
+                        pendingRestore = null;
+                        if (target != null) launchRuntime(target);
+                    }
                 });
             } catch (Exception exception) {
                 final String message = exception.getMessage() == null
@@ -374,6 +403,20 @@ public final class MainActivity extends Activity {
             return;
         }
         disposeWebView();
+        // 每次重新加载页面都要重置文件选择器状态，避免残留拒绝。
+        pickerInFlight = false;
+        pendingFiles = null;
+        fileOwner = null;
+        // 记录镜像会话的 host，供后续同源文件选择放行；本机页面重置为 null。
+        if (initialUrl != null && UrlPolicy.localNavigation(origin, initialUrl) == UrlPolicy.Navigation.MIRROR) {
+            try {
+                mirrorSessionHost = new java.net.URI(initialUrl).getHost();
+            } catch (java.net.URISyntaxException ignored) {
+                mirrorSessionHost = null;
+            }
+        } else if (initialUrl == null) {
+            mirrorSessionHost = null;
+        }
         WebView view = new WebView(this);
         webView = view;
         view.setSaveEnabled(false);
@@ -403,13 +446,15 @@ public final class MainActivity extends Activity {
                     java.util.Collections.singleton(origin.origin()),
                     (source, message, sourceOrigin, isMainFrame, replyProxy) -> {
                         if (source != webView || message.getType() != WebMessageCompat.TYPE_STRING) return;
-                        String command = message.getData();
+                        String data = message.getData();
+                        String command = bridgeCommand(data);
                         if (!LocalBridgePolicy.allows(origin, command, source.getUrl(),
                                 String.valueOf(sourceOrigin), isMainFrame)) return;
                         // WebMessageListener 可能在 Binder 线程回调；原生 UI 操作统一切回主线程。
                         runOnUiThread(() -> {
                             if ("scan".equals(command)) startScan();
-                            else showRemoteUrlDialog();
+                            else if ("url".equals(command)) showRemoteUrlDialog();
+                            else TaskNotifications.post(this, NotificationPayload.parse(data));
                         });
                     });
         }
@@ -439,6 +484,10 @@ public final class MainActivity extends Activity {
                     source.stopLoading();
                     failSession(source, R.string.navigation_blocked);
                 }
+            }
+
+            @Override public void onPageFinished(WebView source, String url) {
+                if (source == webView) rememberPage(url);
             }
 
             @Override public void onReceivedSslError(WebView source, SslErrorHandler handler, SslError error) {
@@ -505,6 +554,8 @@ public final class MainActivity extends Activity {
         InputMethodManager input = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (input != null) input.hideSoftInputFromWindow(webView.getWindowToken(), 0);
         view.requestFocus();
+        pendingRestore = null;
+        rememberPage(target);
         view.loadUrl(target);
     }
 
@@ -512,6 +563,13 @@ public final class MainActivity extends Activity {
         return new WebResourceResponse("text/plain", "UTF-8", status, reason,
                 java.util.Collections.singletonMap("Cache-Control", "no-store"),
                 new java.io.ByteArrayInputStream(new byte[0]));
+    }
+
+    /** {@code notify} 携带 JSON 参数，其余命令是裸字符串。 */
+    private static String bridgeCommand(String data) {
+        if (data == null) return null;
+        if ("notify".equals(data) || data.startsWith("notify ")) return "notify";
+        return data;
     }
 
     private boolean handleNavigation(String url) {
@@ -655,10 +713,31 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private String mirrorSessionHost;
+
+    private boolean isFileChooserSourceTrusted(String url) {
+        if (url == null || activeOrigin == null) return false;
+        UrlPolicy.Navigation action = UrlPolicy.localNavigation(activeOrigin, url);
+        if (action == UrlPolicy.Navigation.IN_APP || action == UrlPolicy.Navigation.MIRROR) {
+            return true;
+        }
+        // 镜像 SPA 的 history.pushState 会把路径改出 /p/ 前缀，但同一 host 的远控页仍可信。
+        if (mirrorSessionHost != null) {
+            try {
+                java.net.URI uri = new java.net.URI(url);
+                if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
+                        && uri.getHost().equals(mirrorSessionHost)) {
+                    return true;
+                }
+            } catch (java.net.URISyntaxException ignored) {}
+        }
+        return false;
+    }
+
     private boolean chooseFiles(WebView source, ValueCallback<Uri[]> callback,
                                 WebChromeClient.FileChooserParams params) {
         if (pickerInFlight || source != webView || activeOrigin == null
-                || !activeOrigin.allows(source.getUrl())
+                || !isFileChooserSourceTrusted(source.getUrl())
                 || (params.getMode() != WebChromeClient.FileChooserParams.MODE_OPEN
                 && params.getMode() != WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE)) {
             callback.onReceiveValue(null);
@@ -715,7 +794,7 @@ public final class MainActivity extends Activity {
         fileOwner = null;
         if (callback == null) return;
         if (resultCode != RESULT_OK || data == null || owner != webView || activeOrigin == null
-                || !activeOrigin.allows(owner.getUrl())) {
+                || !isFileChooserSourceTrusted(owner.getUrl())) {
             callback.onReceiveValue(null);
             return;
         }
@@ -760,10 +839,18 @@ public final class MainActivity extends Activity {
 
     private void showHome() {
         if (prompt != null) prompt.dismiss();
+        pendingRestore = null;
+        preferences.edit().remove(LAST_PAGE).apply();
         disposeWebView();
         webPanel.setVisibility(View.GONE);
         homePanel.setVisibility(View.VISIBLE);
         status.setText(activeOrigin == null ? R.string.runtime_failed_hint : R.string.runtime_ready);
+    }
+
+    private void rememberPage(String url) {
+        String record = RestorablePage.capture(activeOrigin, url);
+        if (record == null) return;
+        preferences.edit().putString(LAST_PAGE, record).apply();
     }
 
     private void disposeWebView() {

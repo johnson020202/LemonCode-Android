@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Web 入口集中编排启动、路由与 workspace shell wiring，与 Root.tsx 同样先保持入口收口，避免跨层状态拆散。 */
-import { useState } from "react";
+import { MirrorSessionGate } from "./remote/MirrorSessionGate.js";
 import { createRoot } from "react-dom/client";
 import {
   AppErrorBoundary,
@@ -31,8 +31,6 @@ import {
 } from "./share/conversationShareRoute.js";
 import type { IPlatformService, RemoteTarget, ServerRemoteInfo } from "@lcode/shared";
 import { parsePairingDeepLink, type PairingDeepLinkRoute } from "./remote/pairingDeepLink.js";
-import { MobilePairingPage } from "./remote/MobilePairingPage.js";
-import type { MobileDataServices } from "./remote/pairingSockets.js";
 import { WEB_DEFAULT_THEME, resolveWebInitialTheme } from "./webThemeSeed.js";
 import { saveWebFile } from "./saveWebFile.js";
 
@@ -306,6 +304,27 @@ function createWebPlatform(): IPlatformService {
         return;
       }
 
+      // 安卓壳内：交给原生通知渠道，应用在后台时也能送达并进入任务栏。
+      if (
+        window.location.hostname === "127.0.0.1" &&
+        typeof window.lemonAndroid?.postMessage === "function"
+      ) {
+        try {
+          window.lemonAndroid.postMessage(
+            "notify " +
+              JSON.stringify({
+                taskId: payload.taskId,
+                status: payload.status,
+                title: payload.title,
+                body: payload.body,
+              }),
+          );
+          return;
+        } catch {
+          // 原生通道不可用时退回浏览器通知
+        }
+      }
+
       if (
         typeof window.Notification === "undefined" ||
         window.Notification.permission !== "granted"
@@ -475,6 +494,7 @@ function buildAppShellElement(
     | "restoreSession"
     | "allowOpenWorkspace"
   >,
+  navigationStorageKey?: string,
 ) {
   const platform = createWebPlatform();
   return (
@@ -490,6 +510,7 @@ function buildAppShellElement(
           initialWorkspaceIdentity={bootstrap.initialWorkspaceIdentity}
           initialTaskId={bootstrap.initialTaskId}
           restoreSession={bootstrap.restoreSession}
+          navigationStorageKey={navigationStorageKey}
           allowOpenWorkspace={bootstrap.allowOpenWorkspace}
           preferDirectoryBrowser
           supportsEmbeddedBrowser={false}
@@ -504,11 +525,14 @@ function buildAppShellElement(
 // /p/<roomId>#c=<capability> 先走双方授权,accept 后凭设备凭据按既有 connectViaWebSocket
 // 流程连同源 /ws;授权完成后渲染与桌面同构的完整 app shell(镜像 UI,不做能力缩减)。
 function MobilePairingGate({ route }: { route: PairingDeepLinkRoute }) {
-  const [services, setServices] = useState<MobileDataServices | null>(null);
-  if (services) {
-    return buildAppShellElement(services, {});
-  }
-  return <MobilePairingPage route={route} onConnected={setServices} />;
+  return (
+    <MirrorSessionGate
+      route={route}
+      renderWorkspace={(services, navigationStorageKey) =>
+        buildAppShellElement(services, {}, navigationStorageKey)
+      }
+    />
+  );
 }
 
 async function bootstrapWebApp() {

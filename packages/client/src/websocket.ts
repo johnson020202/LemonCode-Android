@@ -9,6 +9,8 @@ import {
 import type { IServiceAccessor } from "@lcode/services";
 import { RemoteServiceAccess } from "./remoteServiceAccess.js";
 
+export type RemoteWebServiceAccess = IServiceAccessor & Pick<ChannelClient, "dispose">;
+
 export interface WebSocketConnectionCloseEvent {
   code: number;
   reason: string;
@@ -62,7 +64,7 @@ function wrapBrowserWebSocket(ws: WebSocket): ISocket {
 export function connectViaWebSocket(
   wsUrl: string,
   options?: WebSocketConnectionOptions,
-): Promise<IServiceAccessor> {
+): Promise<RemoteWebServiceAccess> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     let settled = false;
@@ -99,7 +101,13 @@ export function connectViaWebSocket(
   });
 }
 
-export function connectViaProtocol(protocol: IMessagePassingProtocol): IServiceAccessor {
+export function connectViaProtocol(protocol: IMessagePassingProtocol): RemoteWebServiceAccess {
   const client = new ChannelClient(protocol);
-  return new RemoteServiceAccess(client);
+  return Object.assign(new RemoteServiceAccess(client), {
+    dispose: (reason?: Error) => {
+      client.dispose(reason);
+      // ChannelClient 只解除 RPC 监听；WebSocket 必须一起关闭，否则重连会留下幽灵连接。
+      (protocol as IMessagePassingProtocol & { dispose?: () => void }).dispose?.();
+    },
+  });
 }

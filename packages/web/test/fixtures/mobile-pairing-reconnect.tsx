@@ -6,7 +6,7 @@ import { useRemoteControl } from "@/hooks/useRemoteControl.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { LCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { RemotePairingPanel } from "@/settings/RemotePairingPanel.js";
-import { MobilePairingPage } from "../../src/remote/MobilePairingPage.js";
+import { MirrorSessionGate } from "../../src/remote/MirrorSessionGate.js";
 import { parsePairingDeepLink } from "../../src/remote/pairingDeepLink.js";
 import "@/styles.css";
 
@@ -14,10 +14,17 @@ const query = new URLSearchParams(location.search);
 const route = parsePairingDeepLink(`/p/${query.get("roomId")}`, location.hash)!;
 
 function App() {
-  const [connected, setConnected] = useState(false);
-  // 真实配对页、浏览器存储、WebSocket 与客户端入口；仅 Worker 网络端由测试拦截。
-  if (connected) return <div data-testid="mobile-pairing-connected">已连接工作区</div>;
-  return <MobilePairingPage route={route} onConnected={() => setConnected(true)} />;
+  // 真实配对页、浏览器存储、WebSocket、连接代际与客户端入口；仅 Worker 网络端由测试拦截。
+  return (
+    <MirrorSessionGate
+      route={route}
+      renderWorkspace={(_services, navigationKey) => (
+        <div data-testid="mobile-pairing-connected" data-navigation-key={navigationKey}>
+          已连接工作区
+        </div>
+      )}
+    />
+  );
 }
 
 function DesktopPanel() {

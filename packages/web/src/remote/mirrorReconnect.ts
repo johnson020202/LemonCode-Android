@@ -65,8 +65,11 @@ export function planMirrorReconnectReload(
   return { reload: true, next: [...recent, now] };
 }
 
-/** 接管后断链的自动刷新入口;凭据/房间类死亡直接忽略。 */
-export function scheduleMirrorReconnectReload(closeKey: PairingFailureKey): void {
+/** 接管后断链的自动恢复入口;凭据/房间类死亡直接忽略。 */
+export function scheduleMirrorReconnectReload(
+  closeKey: PairingFailureKey,
+  reconnect?: () => void,
+): void {
   if (!MIRROR_RECONNECT_KEYS.has(closeKey)) {
     return;
   }
@@ -81,7 +84,12 @@ export function scheduleMirrorReconnectReload(closeKey: PairingFailureKey): void
     }
     window.sessionStorage.setItem(MIRROR_RELOAD_BUDGET_KEY, JSON.stringify(plan.next));
   } catch {
-    // 存储不可用(JSON 损坏/隐私模式):跳过预算检查,仍执行一次重连刷新
+    // 存储不可用(JSON 损坏/隐私模式):跳过预算检查,仍执行一次重连
+  }
+  // 有恢复回调时优先走原页面重连，不刷新文档；无回调才回退整页刷新。
+  if (reconnect) {
+    reconnect();
+    return;
   }
   window.location.reload();
 }

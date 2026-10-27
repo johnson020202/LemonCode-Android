@@ -95,6 +95,10 @@ async function createWorkerContext(browser, viewport) {
     const originalNow = Date.now.bind(Date);
     globalThis.__pairingClockOffset = 0;
     Date.now = () => originalNow() + globalThis.__pairingClockOffset;
+    sessionStorage.setItem(
+      "lcode:test:document-loads",
+      String(Number(sessionStorage.getItem("lcode:test:document-loads") ?? "0") + 1),
+    );
   });
   // 拦截真实浏览器 WebSocket；一次性 capability 与设备撤销仍在网络边界执行。
   await context.routeWebSocket(/\/ws(?:\/pair)?\?/, (socket) => {
@@ -225,12 +229,15 @@ test("手机远控：关闭页面、后台断连与网络重试不重放配对�
       const page = await context.newPage();
       await page.goto(url);
       await connected(page);
-      const reload = page.waitForEvent("load");
+      await page.evaluate(() => {
+        globalThis.__fixtureLoads = Number(globalThis.__fixtureLoads ?? 0) + 1;
+      });
       worker.sockets.at(-1).close({ code: 4001, reason: "heartbeat timeout" });
-      await reload;
-      await connected(page);
+      await page.waitForFunction(() => document.body.textContent.includes("已连接工作区"));
+      await page.waitForFunction(() => performance.getEntriesByType("navigation").length === 1);
       assert.equal(worker.pairCalls, 1);
       assert.equal(worker.dataCalls, 2);
+      assert.equal(await page.evaluate(() => globalThis.__fixtureLoads), 1);
     } finally {
       await context.close();
     }

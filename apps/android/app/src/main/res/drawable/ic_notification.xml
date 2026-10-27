@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知栏小图标：系统只取 alpha 通道，必须是单色剪影。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M12,2C8.13,2 5,5.13 5,9v4.59l-1.7,1.7A1,1 0,0 0,4,17h16a1,1 0,0 0,0.7 -1.71L19,13.59V9c0,-3.87 -3.13,-7 -7,-7zM12,22a3,3 0,0 0,2.82 -2H9.18A3,3 0,0 0,12 22z" />
+</vector>

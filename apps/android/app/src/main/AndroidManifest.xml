@@ -6,6 +6,8 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- 应用内升级：下载完成后交给系统安装器，安装仍需用户确认。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 任务完成/失败提醒：Android 13 起需运行时授权；拒绝后应用功能不受影响。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"

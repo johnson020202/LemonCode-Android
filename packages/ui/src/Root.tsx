@@ -55,6 +55,7 @@ import { useRootOAuthEffects } from "@/root/useRootOAuthEffects.js";
 import { consumeLcodeJwtInvalidRestartMarker } from "@/root/lcodeJwtInvalidRestartMarker.js";
 import { useDesktopNativeThemeSync } from "@/root/useDesktopNativeThemeSync.js";
 import { useRootPlatformEffects } from "@/root/useRootPlatformEffects.js";
+import { useMobileMirrorNavigation } from "@/root/mobileMirrorNavigation.js";
 import { useRootWorkspaceActions } from "@/root/useRootWorkspaceActions.js";
 import { registerBaseWorkspaceServices } from "@/store/remoteWorkspaceSessionStore.js";
 import type { RootProps } from "@/root/types.js";
@@ -151,6 +152,7 @@ function RootInner({
   isMacDesktop,
   isWindowsDesktop,
   restoreSession = true,
+  navigationStorageKey,
   supportsSettings = true,
   allowOpenWorkspace = true,
   preferDirectoryBrowser,
@@ -565,12 +567,19 @@ function RootInner({
     setWorkspaceActionError(null);
   }, [activeWorkspacePath, setWorkspaceActionError]);
 
+  useMobileMirrorNavigation({
+    storageKey: navigationStorageKey,
+    ready: canRestoreWorkspaceSession,
+    tabStoreApi,
+  });
+
   const { isRestoring, hasCompletedInitialRestore, hasCompletedFullRestore } = useTabPersistence({
     settingService: supportsSettings ? services.settingService : undefined,
     // 首次安装未连接账号时，provider 登录入口判定会晚于 workspace 恢复。
     // 如果这里先恢复 workspace，ChatView mount 会触发草稿 session 预热并在登录页背后报错。
-    restoreSession: restoreSession && canRestoreWorkspaceSession,
-    persistSession: restoreSession && canRestoreWorkspaceSession,
+    // 手机镜像用独立导航快照，不能把桌面 Host 的 lastWorkspaceSession 写回或覆盖。
+    restoreSession: !navigationStorageKey && restoreSession && canRestoreWorkspaceSession,
+    persistSession: !navigationStorageKey && restoreSession && canRestoreWorkspaceSession,
     restorePersistedSession,
     buildPersistPatch: buildPersistedTabPatch,
   });

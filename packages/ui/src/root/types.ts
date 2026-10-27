@@ -24,6 +24,8 @@ export interface RootProps {
   isWindowsDesktop?: boolean;
   /** 是否恢复上次关闭时的标签页，首个窗口 true，新窗口 false */
   restoreSession?: boolean;
+  /** 手机镜像专用：按远端房间保存轻量导航，不把本地桌面 tab 持久化混入。 */
+  navigationStorageKey?: string;
   /** 是否允许访问本地设置服务，远程窗口 false */
   supportsSettings?: boolean;
   /** 是否允许在当前壳层里切换/新开工作区 */

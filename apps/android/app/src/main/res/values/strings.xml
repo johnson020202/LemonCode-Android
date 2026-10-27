@@ -68,4 +68,9 @@
     <string name="update_later">稍后</string>
     <string name="update_failed">更新失败：%1$s</string>
     <string name="report_logs">上报诊断日志</string>
+    <!-- 系统通知：应用不在前台时提醒任务结果与待确认事项。 -->
+    <string name="notification_channel_tasks">任务提醒</string>
+    <string name="notification_channel_tasks_description">任务完成或失败时提醒</string>
+    <string name="notification_channel_actions">待你确认</string>
+    <string name="notification_channel_actions_description">需要你授权或回答时提醒</string>
 </resources>
