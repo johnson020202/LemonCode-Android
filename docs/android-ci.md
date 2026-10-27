@@ -56,10 +56,19 @@ node scripts/android/verify-apk.mjs
 - **欢迎页入口与网址校验已通过（3.17.5）**：`welcomeRemoteEntriesAndUrlValidation` 验证欢迎页扫码按钮打开原生 ScanActivity，网址输入对话框拒绝不完整 URL 并显示错误，合法链接进入配对流程。仪器测试与二维码图片只在 `androidTest` 测试 APK，release APK 不含这些入口。
 - **安全边界**：欢迎页原生消息仅允许当前 App 回环 origin 的 `scan`/`url` 两个命令，主框架与来源 origin 双重校验；不引入 `addJavascriptInterface`，配对密钥不回传 React。
 
+## 3.17.6 三项修复实测（2026-10-27，Android 15 模拟器）
+
+- **系统通知已通过**：`POST_NOTIFICATIONS` 权限进包并在首次启动弹出系统授权框；授予后从真实页面用 `notify` 桥命令发送，`dumpsys notification` 确认两条记录：普通通知落 `task-updates`（importance=3），授权类落 `task-actions`（importance=4，高优先级）。应用退到后台（HOME）后再次发送仍能送达。只使用公开 Android 通知渠道能力，未使用厂商私有接口。
+- **文件选择器已通过**：从本机页面触发 `<input type=file>`（带用户手势）后系统 SAF `com.android.documentsui.PickActivity` 正常成为前台 Activity；镜像 SPA 的 history 路径按同 host 放行，选择结果返回时二次校验来源。
+- **原页面重连已通过**：远控回归 13/13，含「心跳断连后通过原设备凭据恢复、不重新确认」「未接管的 bridge.open 超时不能触发整页重连」「撤销后清理持久凭据」。
+- **构建与静态检查**：JUnit（含新增 `NotificationPayloadTest`）通过、`lintDebug` 通过、`pnpm typecheck` 与 `oxlint` 通过（0 warnings / 0 errors）。
+- **包体**：`versionName=3.17.6`、`versionCode=31706`、`sdkVersion=26`；签名证书 SHA-256 前缀 `2d8cfdf9`，与 `android-v0.1.9` 起的历史包一致。APK 内已确认含 `ic_notification`、两条通知渠道文案与打包后的 `notify` 桥接代码。
+
 ## 未验证 / 未实现
 
 - 真实模型对话（需要用户自己的模型凭据与网络条件）。
 - **真机摄像头扫码与真机端到端复测**：相机识别、MIRROR/COPY 在真实手机上的完整链路；模拟器已验证配对与同步协议、页面与电脑侧执行。
+- **真机通知**：模拟器已验证权限、渠道、前后台送达；厂商 ROM（澎湃 OS 等）的后台限制与通知折叠行为未在真机确认。
 - 手机镜像的断网重连、后台恢复、多设备并发等边界场景。
 - 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装。
 - 真机热更新已由用户确认成功；不同签名历史包的覆盖升级、低版本 Android（< 8.0）与 x86 设备未验证。
