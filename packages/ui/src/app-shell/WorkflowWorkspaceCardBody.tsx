@@ -82,7 +82,7 @@ function CopyButton({ text }: { text: string }) {
   }, [text]);
   return (
     <button
-      className="inline-flex h-[22px] items-center gap-1.5 rounded-[5px] px-1.5 font-sans text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
+      className="inline-flex h-[22px] items-center gap-1.5 rounded-sm px-1.5 font-sans text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
       data-testid="workflow-workspace-copy"
       onClick={copy}
       type="button"
@@ -308,7 +308,7 @@ export const WorkspaceCardBody = memo(function WorkspaceCardBody({
 
   return (
     <div
-      className="wf-ws-body mt-1.5 overflow-hidden rounded-[10px] border border-border bg-card"
+      className="wf-ws-body mt-1.5 overflow-hidden rounded-lg border border-border bg-card"
       data-testid="workflow-workspace-card-body"
       data-ws-body
     >

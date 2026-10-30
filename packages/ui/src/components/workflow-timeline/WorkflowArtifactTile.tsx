@@ -48,7 +48,7 @@ export interface WorkflowCompletionArtifact extends ArtifactPillData {
 export function ArtifactSheetGlyph({ badge }: { badge?: string }) {
   return (
     <div className="absolute inset-0 grid place-items-center" data-testid="workflow-artifact-sheet">
-      <div className="flex aspect-[3/4] w-[38%] max-w-[72px] flex-col gap-1.5 rounded-[4px] border border-border bg-card p-2.5 shadow-[0_1px_0_var(--color-workflow-rule)]">
+      <div className="flex aspect-[3/4] w-[38%] max-w-[72px] flex-col gap-1.5 rounded-sm border border-border bg-card p-2.5 shadow-[0_1px_0_var(--color-workflow-rule)]">
         <i className="block h-[5px] w-[55%] rounded-sm bg-surface-hover" />
         <i className="block h-[3px] rounded-sm bg-surface-hover" />
         <i className="block h-[3px] rounded-sm bg-surface-hover" />
@@ -56,7 +56,7 @@ export function ArtifactSheetGlyph({ badge }: { badge?: string }) {
       </div>
       {badge === undefined ? null : (
         <span
-          className="absolute bottom-2 right-2 rounded-[4px] bg-surface-hover px-1.5 py-0.5 font-mono text-ui-xs text-foreground-subtle"
+          className="absolute bottom-2 right-2 rounded-sm bg-surface-hover px-1.5 py-0.5 font-mono text-ui-xs text-foreground-subtle"
           data-testid="workflow-artifact-sheet-badge"
         >
           {badge}

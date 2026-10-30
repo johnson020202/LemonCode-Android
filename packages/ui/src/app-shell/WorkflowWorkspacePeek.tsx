@@ -55,7 +55,7 @@ export const WorkspacePeek = memo(function WorkspacePeek({
       className={cn(
         lines.length === 0
           ? "h-0 overflow-hidden"
-          : "wf-ws-peek mt-1 overflow-hidden whitespace-pre rounded-[7px] bg-panel px-2.5 py-[7px] font-mono text-ui-sm leading-[17px] text-foreground-subtle",
+          : "wf-ws-peek mt-1 overflow-hidden whitespace-pre rounded-md bg-panel px-2.5 py-[7px] font-mono text-ui-sm leading-[17px] text-foreground-subtle",
       )}
       data-testid="workflow-workspace-peek"
       data-ws-body

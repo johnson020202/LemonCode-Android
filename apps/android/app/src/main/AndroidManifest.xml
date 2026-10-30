@@ -36,8 +36,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <!--
-              OAuth 授权回调：网站授权完成后跳 lcode://oauth/callback，
-              没有这段注册时系统找不到接收方，浏览器里授权成功也回不到应用。
+              OAuth 授权回调：官网 /app/oauth/login 只把 zcode:// 认作合法 redirect，
+              lcode:// 是品牌迁移后的自有 scheme（旧链接仍可能用它）。
+              两个都注册，否则浏览器授权完成后回不到应用。
               singleTask 保证回调复用已有实例（走 onNewIntent），不会再拉起一个服务端。
             -->
             <intent-filter>
@@ -45,6 +46,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lcode" android:host="oauth" android:path="/callback" />
+                <data android:scheme="zcode" android:host="oauth" android:path="/callback" />
             </intent-filter>
         </activity>
         <activity

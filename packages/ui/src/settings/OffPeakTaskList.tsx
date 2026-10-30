@@ -158,7 +158,7 @@ export function OffPeakTaskList({
 
   if (sorted.length === 0) {
     return (
-      <div className="rounded-[10px] border border-card-border px-3 py-3 text-ui-base text-foreground-subtle">
+      <div className="rounded-lg border border-card-border px-3 py-3 text-ui-base text-foreground-subtle">
         {intl.formatMessage({ id: "offPeak.list.empty" })}
       </div>
     );
@@ -203,7 +203,7 @@ export function OffPeakTaskList({
             }}
             className={cn(
               // inset surface shadow 不是 Card 描边语义，明暗主题下会与首页卡片产生色差。
-              "group relative flex h-full min-h-0 cursor-pointer gap-3 overflow-hidden rounded-[10px] border border-card-border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused",
+              "group relative flex h-full min-h-0 cursor-pointer gap-3 overflow-hidden rounded-lg border border-card-border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused",
               // 完成态保持整体置灰，但仍需用 hover 背景反馈卡片可点击、更多菜单可操作。
               task.status === "completed" ? "opacity-60 hover:bg-hover" : "hover:bg-hover",
             )}
@@ -225,7 +225,7 @@ export function OffPeakTaskList({
                     footer.className,
                     (task.status === "queued" || task.status === "paused") &&
                       // Zai Dark 的 brand 是白色，闲时排队 Tag 必须使用设计稿专用紫色语义。
-                      "rounded-[8px] bg-idle-task-surface py-0.5 pl-1 pr-2 text-idle-task",
+                      "rounded-md bg-idle-task-surface py-0.5 pl-1 pr-2 text-idle-task",
                   )}
                 >
                   <span className="flex size-5 shrink-0 items-center justify-center">
@@ -240,7 +240,7 @@ export function OffPeakTaskList({
                   </span>
                 </div>
                 {failedQueueFooter && FailedQueueIcon ? (
-                  <div className="flex w-fit shrink-0 items-center gap-0.5 rounded-[6px] bg-idle-task-surface py-0.5 pl-1 pr-2 text-idle-task opacity-40">
+                  <div className="flex w-fit shrink-0 items-center gap-0.5 rounded-sm bg-idle-task-surface py-0.5 pl-1 pr-2 text-idle-task opacity-40">
                     <span className="flex size-5 shrink-0 items-center justify-center">
                       <FailedQueueIcon
                         className="size-4 shrink-0"

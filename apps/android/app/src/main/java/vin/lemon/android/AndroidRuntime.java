@@ -243,6 +243,10 @@ final class AndroidRuntime {
         builder.environment().put("LCODE_WEB_STATIC_ROOT", www.getAbsolutePath());
         builder.environment().put("LCODE_SERVER_WORKSPACE", workspace.getAbsolutePath());
         builder.environment().put("LCODE_DATA_BASE_DIR", dataDir.getAbsolutePath());
+        // 官网 /app/oauth/login 只接受 zcode://oauth/callback 作为 redirect，
+        // 传 lcode:// 会被判为无效，页面上的「打开 ZCode」按钮点了也没有反应。
+        // 桌面端两个 scheme 都注册，Android 这里同样两个都注册（见 AndroidManifest）。
+        builder.environment().put("LCODE_OAUTH_CALLBACK_URI", "zcode://oauth/callback");
         // 运行时自带 CA 包（Termux ca-certificates）。Node 使用编译期内置根证书，
         // 在该 Android 运行时上会对真实证书报 UNABLE_TO_GET_ISSUER_CERT_LOCALLY。
         // 实测：单独设置 NODE_EXTRA_CA_CERTS 可正常握手；同时设置 SSL_CERT_FILE 反而失败。

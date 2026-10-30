@@ -81,7 +81,7 @@ export function AutomationKeepAwakeNotice({
   return (
     <div
       data-automations-keep-awake
-      className="flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-[10px] bg-surface px-3 py-3 text-foreground-subtle"
+      className="flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-lg bg-surface px-3 py-3 text-foreground-subtle"
     >
       <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
         <AutomationInfoIcon className="size-4" />

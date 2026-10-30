@@ -58,7 +58,7 @@ export function OffPeakHistoryTab({
   const endAt = isOffPeakTerminalStatus(task.status) ? (task.endedAt ?? Date.now()) : Date.now();
   const durationMin = Math.max(1, Math.round((endAt - task.startedAt) / 60_000));
   return (
-    <div className="overflow-x-auto rounded-[8px]">
+    <div className="overflow-x-auto rounded-md">
       {/* History 表格字号可缩放，使用相对行高避免大字号内容被固定 18px 行盒裁切。*/}
       <table className="w-full text-left text-ui-base font-normal leading-snug tracking-[-0.08px]">
         <thead className="bg-surface text-foreground-subtle">
@@ -118,7 +118,7 @@ export function OffPeakHistoryTab({
                       aria-label={intl.formatMessage({
                         id: "automations.moreActions",
                       })}
-                      className="flex size-6 items-center justify-center rounded-[6px] text-foreground-subtle transition-colors hover:bg-white/10 hover:text-foreground data-[state=open]:bg-white/10 data-[state=open]:text-foreground"
+                      className="flex size-6 items-center justify-center rounded-sm text-foreground-subtle transition-colors hover:bg-white/10 hover:text-foreground data-[state=open]:bg-white/10 data-[state=open]:text-foreground"
                     >
                       <AutomationMoreHorizontalIcon className="size-4" aria-hidden="true" />
                     </button>

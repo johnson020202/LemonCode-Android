@@ -499,7 +499,7 @@ function AutomationActionsMenu({
 function AutomationStatusFilterEmpty() {
   const { intl } = useLCodeIntl();
   return (
-    <div className="rounded-[10px] border border-card-border px-3 py-3 text-ui-base text-foreground-subtle">
+    <div className="rounded-lg border border-card-border px-3 py-3 text-ui-base text-foreground-subtle">
       {intl.formatMessage({ id: "automations.statusFilter.empty" })}
     </div>
   );

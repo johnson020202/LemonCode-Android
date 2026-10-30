@@ -180,7 +180,7 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
             : format({ id: "chat.toolCall.workflow.script.kind.step" });
   const object: ReactNode =
     kind === "read" && readSummary !== null ? (
-      <span className="inline-flex h-5 min-w-0 max-w-full items-center rounded-[5px] border border-border bg-card px-1.5 text-ui-sm [&_button]:text-foreground [&_span]:text-foreground">
+      <span className="inline-flex h-5 min-w-0 max-w-full items-center rounded-sm border border-border bg-card px-1.5 text-ui-sm [&_button]:text-foreground [&_span]:text-foreground">
         <ReadFileChip
           summary={readSummary}
           clickable={onOpenCodeViewer !== undefined}
@@ -236,7 +236,7 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
     );
   const replayedNode = replayed ? (
     <span
-      className="inline-flex h-4 items-center rounded-[4px] border border-dashed border-border px-1 text-[10.5px] leading-none text-foreground-subtlest"
+      className="inline-flex h-4 items-center rounded-sm border border-dashed border-border px-1 text-[10.5px] leading-none text-foreground-subtlest"
       data-testid="workflow-workspace-replayed"
       title={format({ id: "chat.toolCall.workflow.script.status.replayedHint" })}
     >
@@ -306,7 +306,7 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
     <div
       aria-expanded={expandable ? open : undefined}
       className={cn(
-        "wf-ws-entry wf-arrive group/ws grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-3 rounded-[9px] px-2 pb-2.5 pt-[9px] outline-none",
+        "wf-ws-entry wf-arrive group/ws grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-3 rounded-lg px-2 pb-2.5 pt-[9px] outline-none",
         expandable &&
           "cursor-pointer hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring/40",
         landed && "wf-ws-landed",
@@ -327,7 +327,7 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
       <span
         aria-hidden
         className={cn(
-          "mt-px flex size-7 items-center justify-center rounded-[7px] bg-surface text-foreground-subtle transition-colors",
+          "mt-px flex size-7 items-center justify-center rounded-md bg-surface text-foreground-subtle transition-colors",
           failed &&
             "bg-[color-mix(in_oklab,var(--color-destructive)_10%,transparent)] text-destructive",
           isRunning && "bg-[color-mix(in_oklab,var(--color-warning)_12%,transparent)] text-warning",

@@ -65,7 +65,7 @@ function HeatmapCell({ cell }: { cell: HeatmapDisplayCell }) {
   const node = (
     <div
       className={cn(
-        "aspect-square w-full min-w-0 rounded-[4px] border transition-transform hover:scale-110 hover:border-border-hover",
+        "aspect-square w-full min-w-0 rounded-sm border transition-transform hover:scale-110 hover:border-border-hover",
         cell.hasUsage ? "border-border" : "border-transparent",
         cell.columnHover && "group-hover/usage-heatmap-column:border-border-hover",
       )}

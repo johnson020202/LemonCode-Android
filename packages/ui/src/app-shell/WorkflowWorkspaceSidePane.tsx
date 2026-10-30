@@ -288,7 +288,7 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
         <div className="flex items-center gap-3">
           <span
             aria-hidden
-            className="wf-arrive flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-surface-hover text-foreground-subtle"
+            className="wf-arrive flex size-[34px] shrink-0 items-center justify-center rounded-lg bg-surface-hover text-foreground-subtle"
           >
             <TerminalIcon className="size-4" />
           </span>

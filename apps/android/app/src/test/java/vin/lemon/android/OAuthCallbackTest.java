@@ -16,6 +16,17 @@ public final class OAuthCallbackTest {
                 OAuthCallback.accept("LCODE://OAUTH/callback?code=x"));
     }
 
+    @Test public void acceptsZcodeSchemeFromTheOfficialLoginPage() {
+        // 官网 /app/oauth/login 只接受 zcode:// 作为 redirect，安卓必须两个 scheme 都收。
+        String url = "zcode://oauth/callback?code=abc&state=def";
+        assertEquals(url, OAuthCallback.accept(url));
+        assertEquals("ZCODE://oauth/callback?error=denied",
+                OAuthCallback.accept("ZCODE://oauth/callback?error=denied"));
+        assertNull(OAuthCallback.accept("zcode://oauth/callback"));
+        assertNull(OAuthCallback.accept("zcode://other/callback?code=x"));
+        assertNull(OAuthCallback.accept("zcode://user@oauth/callback?code=x"));
+    }
+
     @Test public void rejectsOtherSchemesHostsAndPaths() {
         assertNull(OAuthCallback.accept("https://oauth/callback?code=x"));
         assertNull(OAuthCallback.accept("lcode://other/callback?code=x"));

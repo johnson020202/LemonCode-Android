@@ -38,8 +38,8 @@ function getThemeHeroPalette(theme: Theme): ThemeHeroPalette {
         meshLight: "#80beff",
         panel:
           "bg-[linear-gradient(180deg,#ffffff_0%,#f8f8f8_42%,#ebf4ff_100%)] before:absolute before:inset-0 before:content-[''] before:bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.9),transparent_24%),radial-gradient(circle_at_82%_14%,rgba(11,127,255,0.2),transparent_26%),radial-gradient(circle_at_70%_84%,rgba(128,190,255,0.2),transparent_30%)]",
-        glowPrimary: "bg-[#80BEFF]/45 mix-blend-multiply",
-        glowSecondary: "bg-[#EBF4FF]/80 mix-blend-multiply",
+        glowPrimary: "bg-brand/45 mix-blend-multiply",
+        glowSecondary: "bg-brand/40/80 mix-blend-multiply",
         heading: "text-[#0D0D0D]",
         description: "text-[#5C5C5C]",
       };
@@ -49,8 +49,8 @@ function getThemeHeroPalette(theme: Theme): ThemeHeroPalette {
         meshLight: "#80beff",
         panel:
           "bg-[linear-gradient(180deg,#161616_0%,#202020_42%,#001d3d_100%)] before:absolute before:inset-0 before:content-[''] before:bg-[radial-gradient(circle_at_18%_18%,rgba(64,153,255,0.18),transparent_24%),radial-gradient(circle_at_82%_12%,rgba(128,190,255,0.2),transparent_26%),radial-gradient(circle_at_66%_84%,rgba(153,199,255,0.16),transparent_28%)]",
-        glowPrimary: "bg-[#4099FF]/22 mix-blend-screen",
-        glowSecondary: "bg-[#80BEFF]/16 mix-blend-screen",
+        glowPrimary: "bg-brand/22 mix-blend-screen",
+        glowSecondary: "bg-brand/16 mix-blend-screen",
         heading: "text-[#F8F8F8]",
         description: "text-[#ADADAD]",
       };

@@ -1549,7 +1549,7 @@ export function SettingsPage({
               className={cn(
                 "relative flex flex-col min-h-0 min-w-0 h-full border border-border bg-background",
                 // Windows 设置页已有 4px 外层留白，不再承担系统窗口外沿；圆角与主工作区统一为 5px。
-                isWindowsDesktop ? "rounded-[5px]" : "rounded-xl",
+                isWindowsDesktop ? "rounded-sm" : "rounded-xl",
               )}
             >
               {!usesInlineWindowControls ? (

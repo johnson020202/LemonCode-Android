@@ -389,7 +389,7 @@ export function OffPeakEditView({
       {editing?.modelSelectionIssue && shouldShowOffPeakModelSelectionIssue(editing.status) ? (
         <div
           role="status"
-          className="flex items-center gap-2 rounded-[10px] border border-warning/40 bg-warning/10 px-3 py-2 text-ui-base text-warning"
+          className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-ui-base text-warning"
         >
           <AutomationInfoIcon className="size-4 shrink-0" aria-hidden="true" />
           {intl.formatMessage({ id: "offPeak.modelSelection.repairRequired" })}
@@ -458,7 +458,7 @@ export function OffPeakEditView({
       </div>
 
       {editing && tab === "settings" ? (
-        <div className="flex min-h-11 items-center gap-3 rounded-[10px] bg-surface px-3 py-3 text-ui-base leading-5 text-foreground-subtle sm:py-0">
+        <div className="flex min-h-11 items-center gap-3 rounded-lg bg-surface px-3 py-3 text-ui-base leading-5 text-foreground-subtle sm:py-0">
           <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
             <AutomationInfoIcon className="size-4" aria-hidden="true" />
           </span>
