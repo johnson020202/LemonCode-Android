@@ -71,6 +71,8 @@ public final class MainActivity extends Activity {
     private static final int FILE_PICKER = 31;
     private static final int SCAN_REQUEST = 32;
     private static final int NOTIFICATION_PERMISSION = 33;
+    /** 一次性弹窗 WebView 的回收时限：页面 window.open 后不导航也要释放。 */
+    private static final long POPUP_PROBE_MS = 3000L;
     private static final int MAX_UPLOAD_FILES = 32;
 
     private SharedPreferences preferences;
@@ -447,13 +449,14 @@ public final class MainActivity extends Activity {
                     (source, message, sourceOrigin, isMainFrame, replyProxy) -> {
                         if (source != webView || message.getType() != WebMessageCompat.TYPE_STRING) return;
                         String data = message.getData();
-                        String command = bridgeCommand(data);
+                        String command = LocalBridgePolicy.commandOf(data);
                         if (!LocalBridgePolicy.allows(origin, command, source.getUrl(),
                                 String.valueOf(sourceOrigin), isMainFrame)) return;
                         // WebMessageListener 可能在 Binder 线程回调；原生 UI 操作统一切回主线程。
                         runOnUiThread(() -> {
                             if ("scan".equals(command)) startScan();
                             else if ("url".equals(command)) showRemoteUrlDialog();
+                            else if ("open".equals(command)) openInBrowser(data);
                             else TaskNotifications.post(this, NotificationPayload.parse(data));
                         });
                     });
@@ -525,19 +528,29 @@ public final class MainActivity extends Activity {
                 callback.invoke(origin, false, false);
             }
 
-            @Override public boolean onCreateWindow(WebView source, boolean dialog, boolean gesture, Message message) {
-                // 外部链接经系统浏览器打开，绝不创建远程子 WebView。
-                WebView.HitTestResult target = source.getHitTestResult();
-                if (gesture && source == webView && target != null
-                        && (target.getType() == WebView.HitTestResult.SRC_ANCHOR_TYPE
-                        || target.getType() == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)
-                        && target.getExtra() != null) {
-                    String url = target.getExtra();
-                    if (!handleNavigation(url)) source.loadUrl(url);
-                } else {
+            @Override public boolean onCreateWindow(WebView source, boolean dialog, boolean gesture, Message resultMsg) {
+                // 页面脚本的 window.open / target=_blank 没有命中信息，只能靠一次性 WebView
+                // 取得目标地址；拿到后按统一导航策略处理，绝不保留子窗口。
+                if (source != webView || !(resultMsg.obj instanceof WebView.WebViewTransport)) {
                     toast(R.string.popup_unsupported);
+                    return false;
                 }
-                return false;
+                final WebView probe = new WebView(MainActivity.this);
+                probe.getSettings().setJavaScriptEnabled(false);
+                probe.setWebViewClient(new WebViewClient() {
+                    @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                        return dispatchPopup(view, request.getUrl().toString());
+                    }
+
+                    @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                        return dispatchPopup(view, url);
+                    }
+                });
+                ((WebView.WebViewTransport) resultMsg.obj).setWebView(probe);
+                resultMsg.sendToTarget();
+                // 页面只 window.open 不真正导航时，同样要回收这个一次性 WebView。
+                probe.postDelayed(() -> disposeProbe(probe), POPUP_PROBE_MS);
+                return true;
             }
 
             @Override public boolean onShowFileChooser(
@@ -565,11 +578,46 @@ public final class MainActivity extends Activity {
                 new java.io.ByteArrayInputStream(new byte[0]));
     }
 
-    /** {@code notify} 携带 JSON 参数，其余命令是裸字符串。 */
-    private static String bridgeCommand(String data) {
-        if (data == null) return null;
-        if ("notify".equals(data) || data.startsWith("notify ")) return "notify";
-        return data;
+    /**
+     * {@code open <https-url>}：把页面发起的登录跳转交给系统浏览器。
+     *
+     * <p>页面脚本的 {@code window.open} 在 WebView 里拿不到目标地址，供应商授权、
+     * MCP 授权和文档链接都会因此失败；这里改由原生处理，但仍走统一的导航策略，
+     * 不绕过外部 HTTPS 的确认。
+     */
+    private void openInBrowser(String data) {
+        String url = LocalBridgePolicy.openTarget(data);
+        if (url == null) {
+            toast(R.string.external_unavailable);
+            return;
+        }
+        if (!handleNavigation(url) && webView != null) webView.loadUrl(url);
+    }
+
+    /** 弹窗目标地址统一按导航策略处理；一次性 WebView 用完立即销毁，不留子窗口。 */
+    private boolean dispatchPopup(WebView probe, String url) {
+        // window.open() 不带地址时先落 about:blank，随后脚本再改 location；
+        // 这里不能回收也不能提示，交给回收定时器兜底。
+        if (url == null || url.isEmpty() || "about:blank".equals(url)) {
+            return true;
+        }
+        probe.post(() -> disposeProbe(probe));
+        // 本机或镜像页面留在当前 WebView；外部 HTTPS 走统一确认与系统浏览器。
+        if (!handleNavigation(url) && webView != null) webView.loadUrl(url);
+        return true;
+    }
+
+    /** 一次性 WebView 用完即销毁；重复调用安全。 */
+    private void disposeProbe(WebView probe) {
+        try {
+            probe.stopLoading();
+            probe.setWebChromeClient(null);
+            probe.setWebViewClient(new WebViewClient());
+            probe.removeAllViews();
+            probe.destroy();
+        } catch (RuntimeException ignored) {
+            // 已销毁或已脱离窗口时无需再处理。
+        }
     }
 
     private boolean handleNavigation(String url) {

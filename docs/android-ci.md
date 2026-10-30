@@ -64,11 +64,22 @@ node scripts/android/verify-apk.mjs
 - **构建与静态检查**：JUnit（含新增 `NotificationPayloadTest`）通过、`lintDebug` 通过、`pnpm typecheck` 与 `oxlint` 通过（0 warnings / 0 errors）。
 - **包体**：`versionName=3.17.6`、`versionCode=31706`、`sdkVersion=26`；签名证书 SHA-256 前缀 `2d8cfdf9`，与 `android-v0.1.9` 起的历史包一致。APK 内已确认含 `ic_notification`、两条通知渠道文案与打包后的 `notify` 桥接代码。
 
+## 3.17.7 浏览器授权跳转修复实测（2026-10-30，Android 15 模拟器）
+
+- **根因**：`platform.openExternal` 在 Web 模式下用 `window.open`，而原生 `onCreateWindow` 只认「用户手势 + 链接命中」，供应商授权、MCP 授权、文档链接这类程序化弹窗全部落到「新窗口未打开」。
+- **修复**：新增 `open <https-url>` 桥命令，`openExternal`/反馈/社区在安卓壳内改由原生处理；`onCreateWindow` 改为用一次性 WebView 取得目标地址后走统一导航策略，不再依赖手势命中信息。桥命令仍要求主框架 + 回环 origin 双重校验，目标地址只接受无 userinfo 的纯 HTTPS。
+- **已通过**：在 BigModel Coding Plan 详情页点「Get API key」，页面真实发出 `open https://bigmodel.cn/coding-plan/personal/overview`，原生弹出「在系统浏览器打开外部 HTTPS 链接？」确认框，点「打开浏览器」后 Chrome 成为前台并加载目标地址。
+- **已通过（弹窗兜底）**：页面脚本直接 `window.open(url, "_blank")` 同样触发确认框并进入浏览器，不再出现「新窗口未打开」。
+- **已通过（回归）**：设置页 16 个分区逐个打开，内容均正确；通知桥命令仍可用（应用在后台也能送达）；文件选择器、原页面重连未受影响。
+- **构建与静态检查**：JUnit 30 项（含新增 `LocalBridgeOpenTest`）通过、`lintDebug` 通过、`pnpm typecheck` 与 `oxlint` 通过（0 warnings / 0 errors）。
+- **包体**：`versionName=3.17.7`、`versionCode=31707`；签名证书 SHA-256 前缀 `2d8cfdf9`，与历史发布包一致。
+
 ## 未验证 / 未实现
 
 - 真实模型对话（需要用户自己的模型凭据与网络条件）。
+- **本机终端不可用（既有取舍，非本版引入）**：`build-runtime.mjs` 把 `node-pty` 保持 external（Android 无法编译该原生模块），本机工作区打开终端会提示 `node-pty is unavailable in this runtime`。远控（MIRROR）模式下的终端在电脑侧执行，不受影响。
 - **真机摄像头扫码与真机端到端复测**：相机识别、MIRROR/COPY 在真实手机上的完整链路；模拟器已验证配对与同步协议、页面与电脑侧执行。
-- **真机通知**：模拟器已验证权限、渠道、前后台送达；厂商 ROM（澎湃 OS 等）的后台限制与通知折叠行为未在真机确认。
+- **真机通知与授权跳转**：模拟器已验证权限、渠道、前后台送达与浏览器跳转；厂商 ROM（澎湃 OS 等）的后台限制、默认浏览器接管与通知折叠行为未在真机确认。
 - 手机镜像的断网重连、后台恢复、多设备并发等边界场景。
 - 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装。
 - 真机热更新已由用户确认成功；不同签名历史包的覆盖升级、低版本 Android（< 8.0）与 x86 设备未验证。

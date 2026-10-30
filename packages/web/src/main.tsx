@@ -41,6 +41,22 @@ declare global {
   }
 }
 
+/** 在安卓壳内把命令交给原生处理；不在壳内或桥不可用时返回 false。 */
+function postAndroidCommand(command: string): boolean {
+  if (window.location.hostname !== "127.0.0.1") {
+    return false;
+  }
+  if (typeof window.lemonAndroid?.postMessage !== "function") {
+    return false;
+  }
+  try {
+    window.lemonAndroid.postMessage(command);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function resolveWebThemePreference(defaultTheme: Theme = WEB_DEFAULT_THEME): Theme {
   const saved = localStorage.getItem("lcode-theme");
   return resolveWebInitialTheme({ storedTheme: saved, defaultTheme });
@@ -268,11 +284,19 @@ function createWebPlatform(): IPlatformService {
         skippedCount: 0,
       }),
     openExternal: (url) => {
+      // 安卓壳内由原生直接发起 ACTION_VIEW：WebView 里 window.open 拿不到地址，
+      // 供应商授权、MCP 授权等登录跳转会直接失败。
+      if (postAndroidCommand(`open ${url}`)) {
+        return;
+      }
       window.open(url, "_blank", "noopener,noreferrer");
     },
     openFeedback: async () => {
       const feedbackUrl = await resolveFeedbackUrl();
       if (!feedbackUrl) {
+        return;
+      }
+      if (postAndroidCommand(`open ${feedbackUrl}`)) {
         return;
       }
       window.open(feedbackUrl, "_blank", "noopener,noreferrer");
@@ -281,6 +305,9 @@ function createWebPlatform(): IPlatformService {
       const locale = document.documentElement.lang === "en-US" ? "en-US" : "zh-CN";
       const communityUrl = await resolveWebCommunityUrl(locale);
       if (!communityUrl) {
+        return;
+      }
+      if (postAndroidCommand(`open ${communityUrl}`)) {
         return;
       }
       window.open(communityUrl, "_blank", "noopener,noreferrer");
