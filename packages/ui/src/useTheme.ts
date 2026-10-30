@@ -39,13 +39,14 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     id: "system",
     base: "dynamic",
     labelKey: "settings.themeMode.system",
-    swatch: { bg: "#f8f8f8", fg: "#161616", primary: "#4099ff" },
+    swatch: { bg: "#f8f8f8", fg: "#000000", primary: "#007aff" },
   },
   {
     id: "zai-dark",
     base: "dark",
     labelKey: "settings.themeMode.zai-dark",
-    swatch: { bg: "#161616", fg: "#f8f8f8", primary: "#4099ff" },
+    // 与 .theme-zai-dark 令牌一致：纯黑底 + iOS 系统蓝。
+    swatch: { bg: "#000000", fg: "#ffffff", primary: "#0a84ff" },
   },
   {
     id: "zai-light",

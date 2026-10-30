@@ -19,7 +19,7 @@
         <item name="android:textColorPrimary">@color/foreground</item>
         <item name="android:textColorSecondary">@color/foreground_subtle</item>
         <item name="android:colorAccent">@color/primary</item>
-        <item name="android:windowBackground">@color/background_grouped</item>
+        <item name="android:windowBackground">@drawable/dialog_surface</item>
     </style>
 
     <style name="Text.LemonCode" parent="">

@@ -66,8 +66,9 @@ export function ThemePreviewCard({
   const { intl } = useLCodeIntl();
   const previewSurfaceClassName = mode === "light" ? "ring-1 ring-black/5" : "ring-1 ring-white/8";
   const previewThemeStyle = {
-    "--color-background": mode === "light" ? "#f8f8f8" : "#161616",
-    "--color-card": mode === "light" ? "#f8f8f8" : "#161616",
+    // 代码主题预览按深/浅两档基底取色，与 iOS 令牌保持一致（深色用纯黑而非 #161616）。
+    "--color-background": mode === "light" ? "#f8f8f8" : "#000000",
+    "--color-card": mode === "light" ? "#f8f8f8" : "#1c1c1e",
     "--color-foreground": mode === "light" ? "#0d0d0d" : "#ffffff",
   } as CSSProperties;
 
