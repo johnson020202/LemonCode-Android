@@ -74,6 +74,10 @@ public final class MainActivity extends Activity {
     /** 一次性弹窗 WebView 的回收时限：页面 window.open 后不导航也要释放。 */
     private static final long POPUP_PROBE_MS = 3000L;
     private static final int MAX_UPLOAD_FILES = 32;
+    /** iOS 浅色分组背景（#F2F2F7），与 Web 侧浅色主题基底一致。 */
+    private static final int UI_BACKGROUND_LIGHT = 0xFFF2F2F7;
+    /** iOS 深色背景（纯黑），与 .theme-zai-dark 的 --color-background 一致。 */
+    private static final int UI_BACKGROUND_DARK = 0xFF000000;
 
     private SharedPreferences preferences;
     private View homePanel;
@@ -103,6 +107,8 @@ public final class MainActivity extends Activity {
     /** 最近一次已注入页面的回调；用于丢弃同一页面内的重复投递。 */
     private String deliveredOAuthCallback;
     private int deliveredOAuthGeneration = -1;
+    /** 页面最近一次上报的主题；null 表示尚未收到，退回系统 uiMode。 */
+    private Boolean appThemeIsLight;
     /** 页面代际：每次主框架导航自增，用于区分「同一回调在新页面上的合法重投」。 */
     private int pageGeneration;
 
@@ -418,27 +424,57 @@ public final class MainActivity extends Activity {
                 view.setPadding(safe.left, safe.top, safe.right, Math.max(safe.bottom, keyboard.bottom));
                 return WindowInsets.CONSUMED;
             });
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                boolean light = (getResources().getConfiguration().uiMode
-                        & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
-                int appearance = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                controller.setSystemBarsAppearance(light ? appearance : 0, appearance);
-            }
         } else {
             root.setFitsSystemWindows(true);
-            if (Build.VERSION.SDK_INT >= 27) {
-                boolean light = (getResources().getConfiguration().uiMode
-                        & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
-                getWindow().getDecorView().setSystemUiVisibility(light
-                        ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
-            } else {
-                // Android 8.0 无深色导航图标；浅色背景会让系统按钮不可见。
-                getWindow().setNavigationBarColor(android.graphics.Color.BLACK);
-            }
         }
+        applySystemBarAppearance();
         root.requestApplyInsets();
+    }
+
+    /**
+     * 把原生外壳（状态栏区域底色 + 系统图标明暗）对齐到**页面主题**。
+     *
+     * <p>此前只看系统 uiMode：App 内选浅色而系统是深色时，状态栏区域仍是黑底，
+     * 图标又是浅色，于是看起来「状态栏消失」。页面每次应用主题都会发 {@code theme}，
+     * 原生据此切换；未收到页面主题前退回系统偏好。
+     */
+    private void applyPageTheme(boolean light) {
+        appThemeIsLight = light;
+        int background = light ? UI_BACKGROUND_LIGHT : UI_BACKGROUND_DARK;
+        View root = findViewById(R.id.root);
+        if (root != null) root.setBackgroundColor(background);
+        View panel = findViewById(R.id.web_panel);
+        if (panel != null) panel.setBackgroundColor(background);
+        applySystemBarAppearance();
+    }
+
+    /** 系统栏图标明暗：优先页面主题，未知时退回系统 uiMode。 */
+    private void applySystemBarAppearance() {
+        Boolean configured = appThemeIsLight;
+        boolean light = configured != null
+                ? configured
+                : (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
+        int background = light ? UI_BACKGROUND_LIGHT : UI_BACKGROUND_DARK;
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                int appearance = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                // 浅色界面要深色图标（LIGHT_*），深色界面要浅色图标。
+                controller.setSystemBarsAppearance(light ? appearance : 0, appearance);
+            }
+            getWindow().setStatusBarColor(background);
+            getWindow().setNavigationBarColor(background);
+        } else if (Build.VERSION.SDK_INT >= 27) {
+            getWindow().getDecorView().setSystemUiVisibility(light
+                    ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
+            getWindow().setStatusBarColor(background);
+            getWindow().setNavigationBarColor(background);
+        } else {
+            // Android 8.0 无深色导航图标；浅色背景会让系统按钮不可见。
+            getWindow().setNavigationBarColor(android.graphics.Color.BLACK);
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -515,6 +551,10 @@ public final class MainActivity extends Activity {
                             if ("scan".equals(command)) startScan();
                             else if ("url".equals(command)) showRemoteUrlDialog();
                             else if ("open".equals(command)) openInBrowser(data);
+                            else if ("theme".equals(command)) {
+                                Boolean light = LocalBridgePolicy.themeIsLight(data);
+                                if (light != null) applyPageTheme(light);
+                            }
                             else if ("oauth-pending".equals(command)) deliverOAuthCallback();
                             else if ("oauth-ack".equals(command)) {
                                 // 只清待发；保留已投递标记，避免同一页面内重复投递。

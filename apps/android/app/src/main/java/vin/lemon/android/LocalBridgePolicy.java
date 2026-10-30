@@ -11,23 +11,39 @@ final class LocalBridgePolicy {
     private LocalBridgePolicy() {}
 
     /**
-     * 允许的命令固定为：扫码、手输地址、发送任务通知、在系统浏览器打开链接，
-     * 以及 OAuth 回调的取件与确认握手。
-     * {@code notify} 与 {@code open} 带参数，分别由 {@link NotificationPayload}
-     * 和 {@link #openTarget} 再校验一次。
+     * 允许的命令固定为：扫码、手输地址、发送任务通知、在系统浏览器打开链接、
+     * 同步页面主题，以及 OAuth 回调的取件与确认握手。
+     * {@code notify}、{@code open}、{@code theme} 带参数，各自再校验一次。
      */
     static boolean isSupportedCommand(String command) {
         return "scan".equals(command) || "url".equals(command)
                 || "notify".equals(command) || "open".equals(command)
+                || "theme".equals(command)
                 || "oauth-pending".equals(command) || "oauth-ack".equals(command);
     }
 
-    /** {@code notify}、{@code open} 携带参数，其余命令是裸字符串。 */
+    /** {@code notify}、{@code open}、{@code theme} 携带参数，其余命令是裸字符串。 */
     static String commandOf(String data) {
         if (data == null) return null;
         if ("notify".equals(data) || data.startsWith("notify ")) return "notify";
         if ("open".equals(data) || data.startsWith("open ")) return "open";
+        if ("theme".equals(data) || data.startsWith("theme ")) return "theme";
         return data;
+    }
+
+    /**
+     * 解析 {@code theme <light|dark>}。
+     *
+     * <p>App 主题可以与系统主题不同：只按系统 uiMode 决定状态栏图标，
+     * 浅色界面会配上深色图标、深色界面配上浅色图标，用户看不到状态栏。
+     * 底色由原生按 iOS 系统色决定，不接受页面传入任意色值。
+     */
+    static Boolean themeIsLight(String data) {
+        if (data == null) return null;
+        String body = data.substring("theme".length()).trim();
+        if ("light".equals(body)) return Boolean.TRUE;
+        if ("dark".equals(body)) return Boolean.FALSE;
+        return null;
     }
 
     /**

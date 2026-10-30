@@ -171,6 +171,25 @@ export function applyTheme(theme: Theme) {
     root.classList.toggle(className, className === `theme-${appliedTheme}`);
   }
   syncBrowserThemeSurface(resolved);
+  notifyNativeShellTheme(resolved);
+}
+
+/**
+ * 把页面主题同步给原生外壳。
+ *
+ * <p>安卓壳的状态栏区域露出的是原生根视图背景，图标明暗也由原生控制。
+ * 原生只按系统 uiMode 判断时，App 内选浅色而系统是深色会得到「黑底 + 浅色图标」，
+ * 状态栏看起来就是消失。只在 127.0.0.1 的 WebView 里发，桌面端不受影响。
+ */
+function notifyNativeShellTheme(resolved: ResolvedTheme): void {
+  if (typeof window === "undefined" || window.location.hostname !== "127.0.0.1") return;
+  const bridge = (window as { lemonAndroid?: { postMessage(message: string): void } }).lemonAndroid;
+  if (typeof bridge?.postMessage !== "function") return;
+  try {
+    bridge.postMessage(`theme ${resolved}`);
+  } catch {
+    // 桥不可用时只影响原生外壳配色，不影响页面本身。
+  }
 }
 
 export function useTheme() {
