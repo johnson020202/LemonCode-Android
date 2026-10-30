@@ -64,6 +64,16 @@ node scripts/android/verify-apk.mjs
 - **构建与静态检查**：JUnit（含新增 `NotificationPayloadTest`）通过、`lintDebug` 通过、`pnpm typecheck` 与 `oxlint` 通过（0 warnings / 0 errors）。
 - **包体**：`versionName=3.17.6`、`versionCode=31706`、`sdkVersion=26`；签名证书 SHA-256 前缀 `2d8cfdf9`，与 `android-v0.1.9` 起的历史包一致。APK 内已确认含 `ic_notification`、两条通知渠道文案与打包后的 `notify` 桥接代码。
 
+## 3.17.9 按钮统一 + OAuth 回调重复投递修复（2026-10-30，Android 15 模拟器）
+
+- **原生首页重做（iOS 风格）**：纯黑底 + 分组卡片（`Card.LemonCode`），主操作白底黑字 14dp 连续圆角、次操作深色填充 + 细描边、危险操作红字；状态区从裸文本改为卡片。替换掉原先 Material 默认的灰色块按钮。
+- **Web 端按钮统一**：`components/ui/button.tsx` 圆角由 `rounded-md` 统一到 10px，并在 `pointer: coarse`（触摸设备）下强制 `min-h-11`，保证 44pt 级点击区域。
+- **OAuth 回调重复投递（真实缺陷，已修）**：同一条 `lcode://oauth/callback` 会经 `onNewIntent`、页面内导航拦截、`onPageFinished` 三条路径各投一次，实测单次深链被投递 **3 次**。第一次成功后 OAuth 服务清空 `pendingState`，后两次在换 token 期间抛「state 不匹配」，`setOAuthError` 把已成功的登录覆盖成「授权失败，请重试」——与用户截图现象一致。现在按「回调 URL + 页面代际」去重：同一页面内同一条只投一次，页面重载（`onPageStarted` 自增代际）后允许重投。
+- **回调落在远程页时先切回本机页**：授权期间若停在上游套餐页等非本机页面，该页面没有 `__lcodeDeliverOAuthCallback` 钩子，直接注入等于丢弃；现在检测到当前页不是本机 origin 时先 `launchRuntime()` 回到本机页再投递。
+- **已通过**：单次深链投递次数从 3 降为 1（logcat `LemonCodeOAuth` 实测）；原生首页新样式截图确认；JUnit、`lintDebug`、`typecheck`、`oxlint` 通过。
+- **包体**：`versionName=3.17.9`、`versionCode=31709`；签名证书 SHA-256 前缀 `2d8cfdf9`。
+- **未覆盖**：真实 Z.AI 账号的完整授权登录。模拟器内 `zcode.z.ai` 无法解析（`ping: unknown host`），页面 `fetch` 返回 `Failed to fetch`，因此端到端授权只能在用户真机验证；本次修复的是回调投递与去重这条链路。
+
 ## 3.17.8 OAuth 授权回调修复实测（2026-10-30，Android 15 模拟器）
 
 - **根因**：Z.AI / BigModel 授权完成后，网站会跳回 `lcode://oauth/callback`。安卓清单里从未注册这个 scheme（注册数为 0），系统找不到接收方；同时 Web 端 `onOAuthCallback` 是空实现（上游同样如此）。所以浏览器里授权成功了，结果却没有任何接收方，界面只能等到超时并显示「授权失败」。

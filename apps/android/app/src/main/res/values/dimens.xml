@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Native sp equivalents of DESIGN.md text-ui-* roles; never change Web root font size. -->
-    <dimen name="text_ui_xl">18sp</dimen>
-    <dimen name="text_ui_lg">16sp</dimen>
-    <dimen name="text_ui_base">14sp</dimen>
+    <dimen name="text_ui_title">28sp</dimen>
+    <dimen name="text_ui_xl">17sp</dimen>
+    <dimen name="text_ui_lg">17sp</dimen>
+    <dimen name="text_ui_base">15sp</dimen>
     <dimen name="text_ui_caption">13sp</dimen>
-    <dimen name="text_ui_sm">12sp</dimen>
+    <dimen name="text_ui_sm">13sp</dimen>
     <dimen name="space_small">8dp</dimen>
     <dimen name="space_standard">16dp</dimen>
-    <dimen name="touch_target">48dp</dimen>
+    <dimen name="space_large">24dp</dimen>
+    <dimen name="touch_target">50dp</dimen>
+    <!-- iOS 连续圆角观感：按钮 14dp，分组卡片 18dp。 -->
+    <dimen name="button_radius">14dp</dimen>
+    <dimen name="card_radius">18dp</dimen>
 </resources>

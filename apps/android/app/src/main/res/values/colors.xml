@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 内嵌客户端默认挂载深色主题，原生外壳沿用同一深色调，
-         避免顶部出现一条与内容割裂的浅色区域。 -->
-    <color name="background">#161616</color>
+    <!-- iOS 风格深色调色板：纯黑底 + 分组卡片，替代 Material 默认的灰块层级。 -->
+    <color name="background">#000000</color>
+    <color name="background_grouped">#1C1C1E</color>
+    <color name="separator">#38383A</color>
     <color name="foreground">#FFFFFF</color>
-    <color name="foreground_subtle">#B8B8B8</color>
+    <color name="foreground_subtle">#8E8E93</color>
+    <color name="foreground_tertiary">#636366</color>
     <color name="primary">#FFFFFF</color>
+    <color name="button_primary_fill">#FFFFFF</color>
+    <color name="button_primary_text">#000000</color>
+    <color name="button_secondary_fill">#1C1C1E</color>
+    <color name="button_secondary_stroke">#33FFFFFF</color>
+    <color name="destructive">#FF453A</color>
 </resources>

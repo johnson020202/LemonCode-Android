@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="preview_title">LemonCode Android</string>
+    <string name="section_connect">连接</string>
+    <string name="section_maintenance">维护</string>
     <string name="preview_boundary">可独立运行，也可扫码远程控制电脑：Node 运行时、Agent、终端、Git 与文件操作都在本机执行；扫电脑上的远控二维码可直接操作电脑工作区。</string>
     <string name="local_origin">本机运行时\n%1$s</string>
     <string name="starting_runtime">正在准备本机运行时…首次启动需要解包，可能稍慢。</string>

@@ -11,65 +11,91 @@
         android:id="@+id/home_panel"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:clipToPadding="false">
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="@dimen/space_standard"
+            android:paddingStart="@dimen/space_standard"
+            android:paddingEnd="@dimen/space_standard"
+            android:paddingTop="@dimen/space_large"
+            android:paddingBottom="@dimen/space_large"
             android:orientation="vertical">
+
             <TextView
-                style="@style/Text.LemonCode"
+                style="@style/Text.LemonCode.Title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="@dimen/text_ui_xl"
                 android:text="@string/preview_title"
                 android:accessibilityHeading="true" />
             <TextView
-                style="@style/Text.LemonCode"
+                style="@style/Text.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_small"
                 android:text="@string/preview_boundary" />
-            <TextView
-                android:id="@+id/status"
-                style="@style/Text.LemonCode.Secondary"
+
+            <!-- 运行时状态卡片：iOS 设置页的分组容器。 -->
+            <LinearLayout
+                style="@style/Card.LemonCode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_standard"
-                android:text="@string/checking_bundle"
-                android:accessibilityLiveRegion="polite" />
+                android:layout_marginTop="@dimen/space_large">
+                <TextView
+                    android:id="@+id/status"
+                    style="@style/Text.LemonCode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/checking_bundle"
+                    android:accessibilityLiveRegion="polite" />
+                <TextView
+                    android:id="@+id/previous_address"
+                    style="@style/Text.LemonCode.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/no_previous" />
+            </LinearLayout>
+
             <TextView
-                android:id="@+id/previous_address"
-                style="@style/Text.LemonCode.Secondary"
+                style="@style/Text.LemonCode.Section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_small"
-                android:text="@string/no_previous" />
+                android:layout_marginTop="@dimen/space_large"
+                android:text="@string/section_connect" />
             <Button
                 android:id="@+id/connect"
                 style="@style/Button.LemonCode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_standard"
                 android:text="@string/connect"
                 android:enabled="false" />
             <Button
                 android:id="@+id/scan_sync"
-                style="@style/Button.LemonCode"
+                style="@style/Button.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
                 android:text="@string/scan_sync"
                 android:enabled="false" />
             <Button
                 android:id="@+id/reconnect"
-                style="@style/Button.LemonCode"
+                style="@style/Button.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
                 android:text="@string/reconnect"
                 android:enabled="false" />
+
+            <TextView
+                style="@style/Text.LemonCode.Section"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_large"
+                android:text="@string/section_maintenance" />
             <Button
                 android:id="@+id/check_update"
-                style="@style/Button.LemonCode"
+                style="@style/Button.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/check_update" />
@@ -78,32 +104,43 @@
                 style="@style/Text.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
                 android:text="@string/update_idle"
                 android:accessibilityLiveRegion="polite" />
             <Button
                 android:id="@+id/report_logs"
-                style="@style/Button.LemonCode"
+                style="@style/Button.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
                 android:text="@string/report_logs" />
             <Button
                 android:id="@+id/forget"
-                style="@style/Button.LemonCode"
+                style="@style/Button.LemonCode.Destructive"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
                 android:text="@string/forget" />
+
             <TextView
                 style="@style/Text.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_standard"
+                android:layout_marginTop="@dimen/space_large"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
                 android:text="@string/download_boundary" />
             <TextView
                 android:id="@+id/version"
                 style="@style/Text.LemonCode.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_small" />
+                android:layout_marginTop="6dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:alpha="0.7" />
         </LinearLayout>
     </ScrollView>
 

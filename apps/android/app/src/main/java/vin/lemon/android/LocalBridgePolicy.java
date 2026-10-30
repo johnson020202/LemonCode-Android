@@ -11,13 +11,15 @@ final class LocalBridgePolicy {
     private LocalBridgePolicy() {}
 
     /**
-     * 允许的命令固定为：扫码、手输地址、发送任务通知、在系统浏览器打开链接。
+     * 允许的命令固定为：扫码、手输地址、发送任务通知、在系统浏览器打开链接，
+     * 以及 OAuth 回调的取件与确认握手。
      * {@code notify} 与 {@code open} 带参数，分别由 {@link NotificationPayload}
      * 和 {@link #openTarget} 再校验一次。
      */
     static boolean isSupportedCommand(String command) {
         return "scan".equals(command) || "url".equals(command)
-                || "notify".equals(command) || "open".equals(command);
+                || "notify".equals(command) || "open".equals(command)
+                || "oauth-pending".equals(command) || "oauth-ack".equals(command);
     }
 
     /** {@code notify}、{@code open} 携带参数，其余命令是裸字符串。 */

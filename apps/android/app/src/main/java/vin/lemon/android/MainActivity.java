@@ -98,8 +98,13 @@ public final class MainActivity extends Activity {
     private Thread starter;
     private boolean syncing;
     private String pendingRestore;
-    /** 已到达但页面尚未就绪的 OAuth 回调；页面加载完成后补发一次。 */
+    /** 已到达但页面尚未就绪的 OAuth 回调；页面确认收到后清除。 */
     private String pendingOAuthCallback;
+    /** 最近一次已注入页面的回调；用于丢弃同一页面内的重复投递。 */
+    private String deliveredOAuthCallback;
+    private int deliveredOAuthGeneration = -1;
+    /** 页面代际：每次主框架导航自增，用于区分「同一回调在新页面上的合法重投」。 */
+    private int pageGeneration;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -157,6 +162,13 @@ public final class MainActivity extends Activity {
         String callback = OAuthCallback.accept(intentData(intent));
         if (callback == null) return;
         pendingOAuthCallback = callback;
+        // 授权期间可能停在官网套餐页等远程页面，那些页面没有回调钩子，
+        // 直接注入等于丢弃。先切回本机页面，由它完成登录后再回到原页面。
+        if (webView != null && activeOrigin != null
+                && !activeOrigin.allows(webView.getUrl())) {
+            launchRuntime();
+            return;
+        }
         deliverOAuthCallback();
     }
 
@@ -167,14 +179,24 @@ public final class MainActivity extends Activity {
     /**
      * 把 {@code lcode://oauth/callback?…} 交给页面内的 OAuth 服务。
      *
-     * <p>页面还没加载完成时保留原值，等 {@code onPageFinished} 再发一次，
-     * 否则冷启动场景下回调会被丢掉。
+     * <p>同一个回调可能经 onNewIntent、页面内导航拦截和 onPageFinished 多次到达；
+     * 重复投递会让页面里的 OAuth 服务在首次成功后再抛「state 不匹配」，
+     * 界面于是把成功覆盖成失败。这里按 URL 去重，只有页面确认收到（oauth-ack）
+     * 后才允许投递下一条。
      */
     private void deliverOAuthCallback() {
         WebView view = webView;
         String callback = pendingOAuthCallback;
         if (view == null || callback == null) return;
-        pendingOAuthCallback = null;
+        if (callback.equals(deliveredOAuthCallback)
+                && deliveredOAuthGeneration == pageGeneration) {
+            return;
+        }
+        deliveredOAuthCallback = callback;
+        deliveredOAuthGeneration = pageGeneration;
+        // 只记录投递事实与页面代际，不写 URL/code/state，避免路径与凭据进入系统日志。
+        android.util.Log.i("LemonCodeOAuth", "deliver oauth callback, generation="
+                + pageGeneration);
         view.evaluateJavascript(
                 "window.__lcodeDeliverOAuthCallback&&window.__lcodeDeliverOAuthCallback("
                         + org.json.JSONObject.quote(callback) + ");",
@@ -493,6 +515,11 @@ public final class MainActivity extends Activity {
                             if ("scan".equals(command)) startScan();
                             else if ("url".equals(command)) showRemoteUrlDialog();
                             else if ("open".equals(command)) openInBrowser(data);
+                            else if ("oauth-pending".equals(command)) deliverOAuthCallback();
+                            else if ("oauth-ack".equals(command)) {
+                                // 只清待发；保留已投递标记，避免同一页面内重复投递。
+                                pendingOAuthCallback = null;
+                            }
                             else TaskNotifications.post(this, NotificationPayload.parse(data));
                         });
                     });
@@ -519,7 +546,10 @@ public final class MainActivity extends Activity {
             }
 
             @Override public void onPageStarted(WebView source, String url, android.graphics.Bitmap icon) {
-                if (source == webView && !UrlPolicy.isInApp(origin, url)) {
+                if (source != webView) return;
+                // 新页面等于新 JS 上下文：允许同一条回调在这个页面上重新投递。
+                pageGeneration += 1;
+                if (!UrlPolicy.isInApp(origin, url)) {
                     source.stopLoading();
                     failSession(source, R.string.navigation_blocked);
                 }

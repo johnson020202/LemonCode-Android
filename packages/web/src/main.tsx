@@ -97,6 +97,8 @@ function deliverOAuthCallback(url: string): void {
       // 同上。
     }
   }
+  // 页面确认收到后原生才清除暂存，避免页面重载时回调被永久丢弃。
+  postAndroidCommand("oauth-ack");
 }
 
 if (typeof window !== "undefined") {
@@ -369,8 +371,15 @@ function createWebPlatform(): IPlatformService {
     onOAuthCallback: (callback) => {
       // 与桌面端语义一致：注册后返回取消订阅函数。
       oauthCallbackListeners.add(callback);
-      // 回调可能比 React 挂载更早到达，注册后立即补发。
+      // 回调可能比 React 挂载更早到达：先补发排队的，再向原生要可能未投递的那条。
+      // 两者只能选一个，否则同一条回调会被处理两次，第二次必然报 state 过期。
+      const hadPending = pendingOAuthCallbacks.length > 0;
       flushOAuthCallbacks();
+      if (hadPending) {
+        postAndroidCommand("oauth-ack");
+      } else {
+        postAndroidCommand("oauth-pending");
+      }
       return () => {
         oauthCallbackListeners.delete(callback);
       };
