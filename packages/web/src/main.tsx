@@ -38,6 +38,8 @@ import { saveWebFile } from "./saveWebFile.js";
 declare global {
   interface Window {
     lemonAndroid?: { postMessage(message: string): void };
+    /** 原生收到 lcode://oauth/callback 后调用；见 MainActivity.deliverOAuthCallback。 */
+    __lcodeDeliverOAuthCallback?: (url: string) => void;
   }
 }
 
@@ -55,6 +57,50 @@ function postAndroidCommand(command: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * 浏览器授权回调的订阅者。
+ *
+ * <p>Web/安卓壳内没有 Electron 的 deep link 通道：原生在收到
+ * `lcode://oauth/callback` 后调用 {@link window.__lcodeDeliverOAuthCallback}，
+ * 这里再分发给 Root 注册的监听器。没有这层时，浏览器授权成功也回不到应用。
+ */
+const oauthCallbackListeners = new Set<(url: string) => void>();
+/** 原生可能在 React 挂载前就送达回调；先排队，等 Root 注册监听器时补发。 */
+const pendingOAuthCallbacks: string[] = [];
+
+function flushOAuthCallbacks(): void {
+  while (pendingOAuthCallbacks.length > 0 && oauthCallbackListeners.size > 0) {
+    const url = pendingOAuthCallbacks.shift();
+    if (url === undefined) break;
+    for (const listener of oauthCallbackListeners) {
+      try {
+        listener(url);
+      } catch {
+        // 单个监听器异常不应影响其它订阅者或主流程。
+      }
+    }
+  }
+}
+
+function deliverOAuthCallback(url: string): void {
+  if (typeof url !== "string" || url.length === 0) return;
+  if (oauthCallbackListeners.size === 0) {
+    pendingOAuthCallbacks.push(url);
+    return;
+  }
+  for (const listener of oauthCallbackListeners) {
+    try {
+      listener(url);
+    } catch {
+      // 同上。
+    }
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.__lcodeDeliverOAuthCallback = deliverOAuthCallback;
 }
 
 function resolveWebThemePreference(defaultTheme: Theme = WEB_DEFAULT_THEME): Theme {
@@ -320,7 +366,15 @@ function createWebPlatform(): IPlatformService {
       Promise.resolve({ success: false, error: "Not supported in web mode" }),
     openExternalFile: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
     registerOAuthState: (_payload) => {},
-    onOAuthCallback: () => () => {},
+    onOAuthCallback: (callback) => {
+      // 与桌面端语义一致：注册后返回取消订阅函数。
+      oauthCallbackListeners.add(callback);
+      // 回调可能比 React 挂载更早到达，注册后立即补发。
+      flushOAuthCallbacks();
+      return () => {
+        oauthCallbackListeners.delete(callback);
+      };
+    },
     onPaymentCallback: () => () => {},
     onShareImport: () => () => {},
     notifyRendererReady: () => {},

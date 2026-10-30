@@ -98,6 +98,8 @@ public final class MainActivity extends Activity {
     private Thread starter;
     private boolean syncing;
     private String pendingRestore;
+    /** 已到达但页面尚未就绪的 OAuth 回调；页面加载完成后补发一次。 */
+    private String pendingOAuthCallback;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -143,6 +145,40 @@ public final class MainActivity extends Activity {
         // 启动后静默检查一次；只有真正发现新版本才提示，不打断使用。
         checkForUpdates(false);
         requestNotificationPermission();
+        // 应用被授权回调冷启动时，页面还没建好，先存下来等 onPageFinished 再投递。
+        String oauthCallback = OAuthCallback.accept(intentData(getIntent()));
+        if (oauthCallback != null) pendingOAuthCallback = oauthCallback;
+    }
+
+    /** 浏览器授权完成后会以 singleTask 复用本实例，回调从这里进来。 */
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String callback = OAuthCallback.accept(intentData(intent));
+        if (callback == null) return;
+        pendingOAuthCallback = callback;
+        deliverOAuthCallback();
+    }
+
+    private static String intentData(Intent intent) {
+        return intent == null || intent.getData() == null ? null : intent.getData().toString();
+    }
+
+    /**
+     * 把 {@code lcode://oauth/callback?…} 交给页面内的 OAuth 服务。
+     *
+     * <p>页面还没加载完成时保留原值，等 {@code onPageFinished} 再发一次，
+     * 否则冷启动场景下回调会被丢掉。
+     */
+    private void deliverOAuthCallback() {
+        WebView view = webView;
+        String callback = pendingOAuthCallback;
+        if (view == null || callback == null) return;
+        pendingOAuthCallback = null;
+        view.evaluateJavascript(
+                "window.__lcodeDeliverOAuthCallback&&window.__lcodeDeliverOAuthCallback("
+                        + org.json.JSONObject.quote(callback) + ");",
+                null);
     }
 
     /**
@@ -490,7 +526,10 @@ public final class MainActivity extends Activity {
             }
 
             @Override public void onPageFinished(WebView source, String url) {
-                if (source == webView) rememberPage(url);
+                if (source != webView) return;
+                rememberPage(url);
+                // 冷启动时先到的授权回调在这里补发一次。
+                deliverOAuthCallback();
             }
 
             @Override public void onReceivedSslError(WebView source, SslErrorHandler handler, SslError error) {
@@ -621,6 +660,14 @@ public final class MainActivity extends Activity {
     }
 
     private boolean handleNavigation(String url) {
+        // 页面内直接跳 lcode://oauth/callback 时同样要交给 OAuth 服务，
+        // 不能按普通外链拦掉，否则内嵌授权页完成后结果会被丢弃。
+        String oauthCallback = OAuthCallback.accept(url);
+        if (oauthCallback != null) {
+            pendingOAuthCallback = oauthCallback;
+            deliverOAuthCallback();
+            return true;
+        }
         UrlPolicy.Navigation action = UrlPolicy.localNavigation(activeOrigin, url);
         if (action == UrlPolicy.Navigation.IN_APP || action == UrlPolicy.Navigation.MIRROR) {
             return false;

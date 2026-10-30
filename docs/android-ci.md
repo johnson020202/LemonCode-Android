@@ -64,6 +64,16 @@ node scripts/android/verify-apk.mjs
 - **构建与静态检查**：JUnit（含新增 `NotificationPayloadTest`）通过、`lintDebug` 通过、`pnpm typecheck` 与 `oxlint` 通过（0 warnings / 0 errors）。
 - **包体**：`versionName=3.17.6`、`versionCode=31706`、`sdkVersion=26`；签名证书 SHA-256 前缀 `2d8cfdf9`，与 `android-v0.1.9` 起的历史包一致。APK 内已确认含 `ic_notification`、两条通知渠道文案与打包后的 `notify` 桥接代码。
 
+## 3.17.8 OAuth 授权回调修复实测（2026-10-30，Android 15 模拟器）
+
+- **根因**：Z.AI / BigModel 授权完成后，网站会跳回 `lcode://oauth/callback`。安卓清单里从未注册这个 scheme（注册数为 0），系统找不到接收方；同时 Web 端 `onOAuthCallback` 是空实现（上游同样如此）。所以浏览器里授权成功了，结果却没有任何接收方，界面只能等到超时并显示「授权失败」。
+- **修复**：`AndroidManifest.xml` 注册 `lcode://oauth/callback` 的 VIEW/BROWSABLE intent-filter；`MainActivity` 在 `onNewIntent`（singleTask 复用实例）与冷启动 `onCreate` 两处接收，经 `OAuthCallback.accept` 校验形状后通过 `evaluateJavascript` 投递给页面；页面未就绪时暂存，等 `onPageFinished` 补发。Web 端 `onOAuthCallback` 改为真实订阅表，并暴露 `window.__lcodeDeliverOAuthCallback`；回调早于 React 挂载时排队，注册监听器后立即补发。页面内直接跳 `lcode://` 也会在 `handleNavigation` 被拦下并投递，不再按非法导航丢弃。
+- **安全边界**：深链只接受 `lcode://oauth/callback` 且必须带查询参数，拒绝 userinfo、其它 scheme/host/path 与超长地址；真正的 state 校验仍由页面内 OAuth 服务完成。
+- **已通过**：模拟器上 `dumpsys package` 确认深链已注册（`Scheme: lcode`、`Authority: oauth`、`Path: /callback`）；在页面内装探针后触发 `lcode://oauth/callback?code=probe2&state=state2`，页面真实收到完整回调（含 `code` 与 `state`），说明从系统 Intent 到页面分发的整条链路已打通。
+- **构建与静态检查**：JUnit（含新增 `OAuthCallbackTest`）通过、`lintDebug` 通过、`pnpm typecheck` 与 `oxlint` 通过。
+- **包体**：`versionName=3.17.8`、`versionCode=31708`；签名证书 SHA-256 前缀 `2d8cfdf9`，与历史发布包一致。
+- **未覆盖**：真实 Z.AI / BigModel 账号的完整授权登录（需要用户本人凭据与网络），本次只验证了回调投递链路本身。
+
 ## 3.17.7 浏览器授权跳转修复实测（2026-10-30，Android 15 模拟器）
 
 - **根因**：`platform.openExternal` 在 Web 模式下用 `window.open`，而原生 `onCreateWindow` 只认「用户手势 + 链接命中」，供应商授权、MCP 授权、文档链接这类程序化弹窗全部落到「新窗口未打开」。

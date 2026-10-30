@@ -35,6 +35,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--
+              OAuth 授权回调：网站授权完成后跳 lcode://oauth/callback，
+              没有这段注册时系统找不到接收方，浏览器里授权成功也回不到应用。
+              singleTask 保证回调复用已有实例（走 onNewIntent），不会再拉起一个服务端。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lcode" android:host="oauth" android:path="/callback" />
+            </intent-filter>
         </activity>
         <activity
             android:name=".ScanActivity"
