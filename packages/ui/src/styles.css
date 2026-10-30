@@ -61,6 +61,10 @@ body,
 body {
   margin: 0;
   overflow: hidden;
+  /* iOS 观感：整站使用系统字体栈，而不是逐个组件补 font-sans。 */
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* 中文模板描述按单字断行会拆开“简报”等词组，并把标点挤到下一行。
@@ -153,6 +157,18 @@ body {
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
+  /* iOS 设计语言：优先系统字体（SF Pro / PingFang），与原生外壳一致。 */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui,
+    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  /* 统一圆角刻度：Tailwind v4 的 rounded-* 全部由这些令牌驱动。
+   * 覆盖默认值即可让全站既有工具类一次收敛到 iOS 连续圆角观感。 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-3xl: 22px;
   --text-ui-xl: calc(var(--ui-font-size) + 4px);
   --text-ui-lg: calc(var(--ui-font-size) + 2px);
   --text-ui-base: var(--ui-font-size);
@@ -619,10 +635,11 @@ body {
 .theme-zai-dark {
   --animated-gradient-text-strong: rgba(255, 255, 255, 1);
   --animated-gradient-text-soft: rgba(255, 255, 255, 0.22);
-  --color-background: #161616;
-  --color-background-win-alt: #2b2b2b;
+  /* iOS 深色基底：纯黑主背景 + 分组卡片，替代原先的 #161616 中性灰。 */
+  --color-background: #000000;
+  --color-background-win-alt: #1c1c1e;
   --color-background-alt: color-mix(in oklab, var(--color-background-win-alt) 60%, transparent);
-  --color-brand: #ffffff;
+  --color-brand: #0a84ff;
   --color-trajectory-user: #60a5fa;
   --color-trajectory-assistant: #2dd4bf;
   --color-trajectory-reasoning: #a78bfa;
@@ -634,16 +651,17 @@ body {
   --color-accent: #001d3d;
   --color-find-highlight: #542500;
   --color-find-highlight-active: #ff8a30;
-  --color-border: rgba(255, 255, 255, 0.1);
-  --color-border-hover: rgba(255, 255, 255, 0.15);
-  --color-hover: rgba(255, 255, 255, 0.05);
+  /* iOS 分隔线（#38383A 等效）与分组层级：面板/卡片统一 #1C1C1E，次级 #2C2C2E。 */
+  --color-border: rgba(84, 84, 88, 0.6);
+  --color-border-hover: rgba(120, 120, 128, 0.8);
+  --color-hover: rgba(255, 255, 255, 0.06);
   --color-selected: rgba(255, 255, 255, 0.1);
-  --color-header: #202020;
-  --color-panel: #202020;
-  --color-sidebar: #161616;
-  --color-surface: rgba(255, 255, 255, 0.05);
-  --color-surface-hover: rgba(255, 255, 255, 0.1);
-  --color-card: #2b2b2b;
+  --color-header: #1c1c1e;
+  --color-panel: #1c1c1e;
+  --color-sidebar: #000000;
+  --color-surface: rgba(255, 255, 255, 0.06);
+  --color-surface-hover: rgba(255, 255, 255, 0.12);
+  --color-card: #1c1c1e;
   --color-card-selected: var(--color-input);
   --color-card-border: var(--color-border);
   --color-popover: #2b2b2b;

@@ -28,6 +28,7 @@
             android:textAlignment="center"
             android:accessibilityLiveRegion="polite" />
 
+        <!-- 相册是主要出路（相机被拒时仍可用），取消降为次级，避免两个同权重灰块。 -->
         <Button
             android:id="@+id/scan_gallery"
             style="@style/Button.LemonCode"
@@ -38,10 +39,10 @@
 
         <Button
             android:id="@+id/scan_cancel"
-            style="@style/Button.LemonCode"
+            style="@style/Button.LemonCode.Secondary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_standard"
+            android:layout_marginTop="@dimen/space_small"
             android:text="@string/scan_cancel" />
     </LinearLayout>
 </FrameLayout>
