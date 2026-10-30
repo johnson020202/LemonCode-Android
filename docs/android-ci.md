@@ -64,6 +64,17 @@ node scripts/android/verify-apk.mjs
 - **构建与静态检查**：JUnit（含新增 `NotificationPayloadTest`）通过、`lintDebug` 通过、`pnpm typecheck` 与 `oxlint` 通过（0 warnings / 0 errors）。
 - **包体**：`versionName=3.17.6`、`versionCode=31706`、`sdkVersion=26`；签名证书 SHA-256 前缀 `2d8cfdf9`，与 `android-v0.1.9` 起的历史包一致。APK 内已确认含 `ic_notification`、两条通知渠道文案与打包后的 `notify` 桥接代码。
 
+## 3.17.10 全站 iOS 设计语言（2026-10-30，Android 15 模拟器）
+
+- **改动方式**：不逐页改样式，而是改设计令牌与共享基元，让全部页面继承。
+- **令牌层**（`packages/ui/src/styles.css` 的 `@theme`）：新增 `--font-sans`（SF Pro / PingFang 系统字体栈）并应用到 `body`；新增 `--radius-sm..3xl`（6/8/10/14/18/22px）覆盖，Tailwind v4 的 `rounded-*` 全部由这些令牌驱动，全仓约 900 处既有工具类一次收敛。`zai-dark`（Web 默认深色主题）改为 iOS 语义：纯黑背景、`#1C1C1E` 分组卡片、`#54545866` 分隔线、`#0A84FF` 品牌蓝。
+- **共享基元**：`input`/`textarea` 改填充式背景、默认无描边、聚焦才出现主题色细边，高度加到 36/44px；`switch` 改 iOS 开关（系统绿 `#34C759`、26×44、白色滑块带阴影）；`tabs` 改 iOS 分段控件（凹槽容器 + 选中白色滑块）；原生扫描页把「从相册选择」设为主按钮、「取消」降为次级。
+- **已通过（截图级页面验收）**：模拟器逐页截图确认**工作区首页、设置、模型设置、MCP、插件、外观**六个页面均呈现 iOS 观感，无布局错乱。验证方式为 `adb forward` 接 CDP 后按导航点击并 `Page.captureScreenshot` 逐页截图。
+- **静态检查**：`typecheck`、`oxlint`、`lintDebug`、JUnit 全部通过。
+- **包体**：`versionName=3.17.10`、`versionCode=31710`；签名证书 SHA-256 前缀 `2d8cfdf9`。
+- **热更新已实测**：3.17.9 → 发现 v3.17.10 → 下载 → SHA-256 校验 → 系统安装器 → 覆盖安装后 `versionName` 变为 3.17.10；匿名（不带凭据）请求 `releases/latest` 与两个附件均返回 200。
+- **未覆盖**：浅色主题与其它非默认主题（sepia-light / midnight-blue / forest-dark）未逐页截图核对；深色文本与分组背景的对比度为按 iOS 取值推断，未做逐项 WCAG 测量。
+
 ## 3.17.9 按钮统一 + OAuth 回调重复投递修复（2026-10-30，Android 15 模拟器）
 
 - **原生首页重做（iOS 风格）**：纯黑底 + 分组卡片（`Card.LemonCode`），主操作白底黑字 14dp 连续圆角、次操作深色填充 + 细描边、危险操作红字；状态区从裸文本改为卡片。替换掉原先 Material 默认的灰色块按钮。
