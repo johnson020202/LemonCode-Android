@@ -39,7 +39,7 @@ function getThemeHeroPalette(theme: Theme): ThemeHeroPalette {
         panel:
           "bg-[linear-gradient(180deg,#ffffff_0%,#f8f8f8_42%,#ebf4ff_100%)] before:absolute before:inset-0 before:content-[''] before:bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.9),transparent_24%),radial-gradient(circle_at_82%_14%,rgba(11,127,255,0.2),transparent_26%),radial-gradient(circle_at_70%_84%,rgba(128,190,255,0.2),transparent_30%)]",
         glowPrimary: "bg-brand/45 mix-blend-multiply",
-        glowSecondary: "bg-brand/40/80 mix-blend-multiply",
+        glowSecondary: "bg-brand/40 mix-blend-multiply",
         heading: "text-[#0D0D0D]",
         description: "text-[#5C5C5C]",
       };
