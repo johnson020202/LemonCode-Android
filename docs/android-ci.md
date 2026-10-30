@@ -115,3 +115,14 @@ node scripts/android/verify-apk.mjs
 - 文件下载与保存、内嵌浏览器、Computer Use、后台常驻、插件市场 Git 安装。
 - 真机热更新已由用户确认成功；不同签名历史包的覆盖升级、低版本 Android（< 8.0）与 x86 设备未验证。
 - 上游全部业务功能的逐项设备验收；不能据构建成功宣称“全功能同步”。
+
+## 3.17.11 OAuth scheme 修复 + 全站样式补齐（2026-10-30，Android 15 模拟器）
+
+- **授权根因（决定性证据）**：抓取官网 `zcode.z.ai/app/oauth/login` 的前端代码，其中对 redirect 做严格校验：`if("zcode:"!==protocol||"oauth"!==hostname||"/callback"!==path) return null;`。**它只认 `zcode://oauth/callback`**，而本 App 一直传 `lcode://oauth/callback`。校验失败后跳转地址被解析为 null，页面上的「打开 ZCode」按钮点击无任何反应，服务端也拿不到授权结果。桌面端深链解析本就双认两个 scheme（`DEEP_LINK_SCHEME` / `LEGACY_DEEP_LINK_SCHEME`），Android 此前只注册了 `lcode`。
+- **修复**：清单同时注册 `lcode://` 与 `zcode://`；`OAuthCallback` 校验接受两个 scheme（其余形状校验不变）；redirect URI 支持 `LCODE_OAUTH_CALLBACK_URI` 覆盖，`AndroidRuntime` 注入 `zcode://oauth/callback`（桌面端不设该变量，行为不变）。
+- **已通过（授权链路）**：设备上 `dumpsys package` 确认两个 scheme 均注册；页面装探针后触发 `zcode://oauth/callback?code=zc9&state=zs9`，探针收到完整回调；进一步用假 code 触发，页面真实进入 token 交换并报 `Login failed`——证明「深链送达 → 页面处理」整条链路打通（失败仅因 code 是假的）。
+- **样式根因**：上一版只改设计令牌，但有 16 个文件把像素圆角（4/5/6/7/8/9/10/16px）与旧蓝（`#4099FF`/`#80BEFF`/`#EBF4FF`）**硬编码**，绕过令牌，因此这些界面仍是旧观感。
+- **修复**：硬编码值全部替换为令牌类（`rounded-sm/md/lg`、`bg-brand`）；主题预览色块与代码主题预览深色基底改为纯黑 + `#0A84FF`；原生 `AlertDialog` 换成圆角 `dialog_surface` 底板。
+- **已通过（视觉）**：工作区首页、对话页、插件市场、设置各分区截图确认 iOS 观感（纯黑底、圆角卡片、白色主按钮、绿色开关、分段控件）。
+- **包体与热更新**：`versionName=3.17.11`、`versionCode=31711`；匿名（无凭据）请求 `releases/latest` 返回 200 并识别为 v3.17.11，APK 与 sha256 均可下载；3.17.10 → 3.17.11 热更新实测完成（发现 → 下载 → SHA-256 校验 → 系统安装器 → 版本变为 3.17.11）。
+- **未覆盖**：真实 Z.AI 账号的完整授权登录（模拟器无法解析 `zcode.z.ai`，只能在用户真机验证）；未逐页截图全部子页面（自动化、闲时任务、用量明细、Git 评审等），只清理了硬编码来源并核对了主要界面。
