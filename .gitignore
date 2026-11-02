@@ -211,3 +211,6 @@ nul
 !/apps/lcode-cli/packages/debug/src/**
 !/apps/lcode-cli/packages/debug/server/
 !/apps/lcode-cli/packages/debug/server/**
+
+# macOS 索引标记
+.metadata_never_index
