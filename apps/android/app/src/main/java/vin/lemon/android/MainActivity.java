@@ -1014,6 +1014,10 @@ public final class MainActivity extends Activity {
         if (prompt != null) prompt.dismiss();
         pendingRestore = null;
         preferences.edit().remove(LAST_PAGE).apply();
+        // 回首页可能发生在镜像页加载失败或渲染进程崩溃时：这里必须一并收掉保活服务，
+        // 否则会留下常驻通知与 WakeLock，用户已离开远控却仍以为连接在保持。
+        mirrorSessionHost = null;
+        MirrorKeepAliveService.stop(this);
         disposeWebView();
         webPanel.setVisibility(View.GONE);
         homePanel.setVisibility(View.VISIBLE);
