@@ -37,6 +37,7 @@ import {
   LogOut,
   Maximize,
   Palette,
+  QrCode,
   Settings,
   Smartphone,
   ZoomIn,
@@ -130,6 +131,14 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
 }) {
   const { intl } = useLCodeIntl();
   const platform = usePlatform();
+  /**
+   * 安卓壳的扫码连接电脑 / 填写远程网址。
+   *
+   * <p>这两个能力由原生壳注入 platform，桌面与 Web 不提供。以前唯一入口在
+   * 未登录的登录页，登录后几乎找不到，所以这里在侧栏底部常驻一个入口。
+   */
+  const scanRemoteConnection = platform.scanRemoteConnection;
+  const enterRemoteConnectionUrl = platform.enterRemoteConnectionUrl;
   const interfaceMode = useLCodeStore((state) => state.interfaceMode);
   const setInterfaceMode = useLCodeStore((state) => state.setInterfaceMode);
   const zoomInShortcutLabel = useShortcutCommandLabel("zoomIn");
@@ -419,6 +428,58 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="flex shrink-0 items-center gap-1.5">
+          {/*
+            安卓壳：扫码连接电脑 / 填写远程网址。
+            这两个能力只在原生壳里存在（platform 注入），桌面/Web 不渲染。
+            以前唯一入口在未登录的登录页，登录后几乎找不到，这里放到侧栏底部
+            「设置」左侧，任何页面一键可达。
+          */}
+          {scanRemoteConnection && enterRemoteConnectionUrl ? (
+            <Popover>
+              <ControlHintTooltip title={intl.formatMessage({ id: "sidebar.connectComputer" })}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-lg"
+                    data-testid="footer-connect-computer"
+                    aria-label={intl.formatMessage({ id: "sidebar.connectComputer" })}
+                  >
+                    <QrCode className="size-4" />
+                  </Button>
+                </PopoverTrigger>
+              </ControlHintTooltip>
+              <PopoverContent side="top" align="end" className="w-[min(92vw,320px)] p-3">
+                <div className="space-y-2">
+                  <div className="text-ui-base font-semibold text-foreground">
+                    {intl.formatMessage({ id: "sidebar.connectComputer" })}
+                  </div>
+                  <Button
+                    variant="default"
+                    className="h-10 w-full gap-2 text-ui-base"
+                    size="lg"
+                    data-testid="footer-connect-computer-scan"
+                    onClick={scanRemoteConnection}
+                  >
+                    <QrCode className="size-4" aria-hidden="true" />
+                    {intl.formatMessage({ id: "login.remote.scan" })}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-10 w-full text-ui-base"
+                    size="lg"
+                    data-testid="footer-connect-computer-url"
+                    onClick={enterRemoteConnectionUrl}
+                  >
+                    {intl.formatMessage({ id: "login.remote.enterUrl" })}
+                  </Button>
+                  <p className="text-ui-sm text-foreground-subtle">
+                    {intl.formatMessage({ id: "login.remote.hint" })}
+                  </p>
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : null}
           {deviceSyncPanel}
           {remoteControlPanel ? (
             <Popover>

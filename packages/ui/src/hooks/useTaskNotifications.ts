@@ -149,11 +149,17 @@ export function useWorkspaceTerminalTaskNotifications({
     };
     const store = acquireSessionsIndex(registryScope, lcodeAgentService);
     const syncState = () => {
-      setIndexState({
-        signature,
-        sessions: store.getSessions(),
-        status: store.getStatus(),
-      });
+      const nextSessions = store.getSessions();
+      const nextStatus = store.getStatus();
+      // getSessions() 返回按变更失效的缓存数组，可直接按引用比较。
+      // 每次帧都 setState 新对象会让整个 App 重渲染，远程打开对话明显变慢。
+      setIndexState((previous) =>
+        previous.signature === signature &&
+        previous.status === nextStatus &&
+        previous.sessions === nextSessions
+          ? previous
+          : { signature, sessions: nextSessions, status: nextStatus },
+      );
     };
     const unsubscribe = store.subscribe(syncState);
     syncState();

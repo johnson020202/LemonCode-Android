@@ -523,6 +523,7 @@ const zhCN: Record<string, string> = {
   "login.expired.restart": "确认并重启",
   "login.useApiKey": "使用 API key",
   "login.enter": "进入",
+  "sidebar.connectComputer": "连接电脑",
   "login.remote.scan": "扫码连接电脑",
   "login.remote.enterUrl": "填写远程网址",
   "login.remote.hint": "连接电脑后可在手机上操作电脑工作区",

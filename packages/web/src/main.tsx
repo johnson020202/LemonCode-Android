@@ -602,6 +602,17 @@ function renderWebBootstrapError(error: unknown): void {
 }
 
 // 既有 bootstrap 与手机配对深链共用的 app shell:配对完成后按完全相同的形态渲染镜像 UI。
+//
+// platform 必须是稳定引用：buildAppShellElement 在镜像页每次重渲染时都会被调用，
+// 若这里新建对象，Root 拿到的 platform prop 每次都变，所有依赖它的 effect（通知订阅、
+// sessions-index acquire、各类平台能力探测）会随之反复重建——表现就是远程连接后
+// 打开对话要等很久。用 memo 在首次调用时创建并复用，避免模块求值期就触碰 window。
+let cachedWebPlatform: IPlatformService | null = null;
+function getWebPlatform(): IPlatformService {
+  cachedWebPlatform ??= createWebPlatform();
+  return cachedWebPlatform;
+}
+
 function buildAppShellElement(
   services: WebServices,
   bootstrap: Pick<
@@ -614,7 +625,7 @@ function buildAppShellElement(
   >,
   navigationStorageKey?: string,
 ) {
-  const platform = createWebPlatform();
+  const platform = getWebPlatform();
   return (
     <AppErrorBoundary>
       <LCodeIntlProvider
