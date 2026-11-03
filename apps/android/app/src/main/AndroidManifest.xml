@@ -63,6 +63,16 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
             android:theme="@style/Theme.LemonCode" />
         <!--
+          小米超级岛（焦点通知）调试开关。官方接入流程 pId=2132 要求：
+          正式发布需在小米开放平台申请 APP_ID 并通过审核；测试阶段把
+          BUILD_TYPE_DEBUG 设为 true，系统才会接受本包的 miui.focus.param。
+          没有 APP_ID 时该标记只影响系统是否显示「小米超级岛」设置项与是否
+          采用焦点模板；标准实时动态（通道一）不依赖它。
+        -->
+        <meta-data
+            android:name="com.xiaomi.xms.BUILD_TYPE_DEBUG"
+            android:value="true" />
+        <!--
           远程控制前台保活：只在镜像页打开期间运行。connectedDevice 类型表示
           「与已配对电脑保持连接」，Android 15 的 dataSync 六小时上限不适用。
         -->
