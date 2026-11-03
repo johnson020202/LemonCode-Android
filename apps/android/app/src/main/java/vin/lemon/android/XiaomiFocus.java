@@ -106,7 +106,12 @@ final class XiaomiFocus {
     }
 
     /**
-     * 给进行中通知附加焦点模板。未授权时直接返回，不改变通知内容。
+     * 给进行中通知附加焦点模板。
+     *
+     * <p>**不按授权门禁**：`miui.focus.param` 里的 `filterWhenNoPermission=false`
+     * 让系统在未授权时退化为普通通知，不会丢通知、也不会报错。反过来，若只在
+     * `canShowFocus` 为真时才附加，侧载包永远触发不到——而系统设置里的「小米超级岛」
+     * 开关正是随应用首次发送焦点通知才出现的，那样就形成死锁。
      *
      * @param title 通知标题（岛展开态与通知卡正文）
      * @param text  当前进度正文
@@ -114,7 +119,7 @@ final class XiaomiFocus {
      */
     static void apply(Context context, android.app.Notification.Builder builder,
                       String title, String text, String chip) {
-        if (!allowed(context)) return;
+        if (!isXiaomi() || !hasIsland()) return;
         try {
             Bundle extras = new Bundle();
             extras.putString(EXTRA_PARAM, param(context, title, text, chip));
@@ -172,6 +177,8 @@ final class XiaomiFocus {
                     .put("business", "lcode_task")
                     .put("updatable", true)
                     .put("enableFloat", false)
+                    // 未获焦点通知授权时退化为普通通知，而不是把通知过滤掉。
+                    .put("filterWhenNoPermission", false)
                     .put("ticker", word + " · " + title)
                     .put("aodTitle", word)
                     .put("param_island", paramIsland)

@@ -50,4 +50,8 @@
   1. 字面量 extra `android.requestPromotedOngoing = true`（该常量到 SDK 36.1 才公开，compileSdk 35 只能写字面量）；
   2. `setShortCriticalText(...)` 提供岛上短词，否则岛内为空；
   3. 通知在**前台也要投递**——实时动态是常驻状态条而非打扰，`document.hasFocus()` 的抑制不能作用于 `running` / `dismiss`。
-- `miui.focus.param` 模板只在 `canShowFocus` 放行时附加（`XiaomiFocus.apply`），未放行时是无副作用的 no-op，不影响标准路径。
+- `miui.focus.param` 模板在小米机型且系统声明支持岛时**始终附加**，不按 `canShowFocus` 门禁：
+  - 门禁会形成死锁——侧载包永远拿不到 `canShowFocus`，而「小米超级岛」开关可能正是随首次发送焦点通知才出现；
+  - 模板内 `filterWhenNoPermission: false` 保证未授权时系统退化为普通通知，而不是把通知过滤掉；
+  - 未获授权时系统忽略模板，标准 promoted 路径照常工作。
+- 用 root 写入 `focus_notifs` 并重启 SystemUI 后，设置页仍不出现「小米超级岛」，说明该开关不由这个设置项单独控制，而是系统侧按包名审核放行。侧载包不具备条件，需上架小米应用商店并完成焦点通知审核。
