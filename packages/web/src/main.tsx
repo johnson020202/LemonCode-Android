@@ -416,7 +416,11 @@ function createWebPlatform(): IPlatformService {
         }
       };
 
-      if (document.hasFocus() && payload.status !== "dismiss") {
+      // 前台抑制只针对「提醒类」通知；进行中/清除必须照常投递。
+      // 实时动态是常驻状态条，不是打扰，且它依赖通知真的存在才会进岛，
+      // 不能因为用户此刻正看着 App 就不发。
+      const isLiveStatus = payload.status === "running" || payload.status === "dismiss";
+      if (document.hasFocus() && !isLiveStatus) {
         // 前台完成时终态通知会被抑制；但任务在后台跑过时可能留下常驻进度通知，
         // 这里补一条 dismiss 把它清掉，避免「任务早已结束、通知栏还挂着」。
         if (payload.status === "completed" || payload.status === "failed") {

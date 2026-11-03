@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.service.notification.StatusBarNotification;
 
 import androidx.core.app.NotificationCompat;
@@ -28,6 +29,15 @@ final class TaskNotifications {
     static final String CHANNEL_UPDATES = "task-updates";
     static final String CHANNEL_ACTIONS = "task-actions";
     static final String CHANNEL_PROGRESS = "task-progress";
+
+    /**
+     * {@code Notification.EXTRA_REQUEST_PROMOTED_ONGOING}。
+     *
+     * <p>该常量到 SDK 36.1 才公开，而本工程 compileSdk 是 35，因此写字面量。
+     * 社区在 HyperOS 4.0 / Android 17 真机上验证过：只靠反射调用
+     * {@code setRequestPromotedOngoing} 不可靠，必须同时带上这个 extra。
+     */
+    private static final String EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing";
 
     private TaskNotifications() {}
 
@@ -109,11 +119,18 @@ final class TaskNotifications {
     }
 
     /**
-     * 进行中通知：常驻 + 状态栏计时器。
+     * 进行中通知：常驻 + 状态栏计时 + 岛上短词。
      *
      * <p>满足 Android 16 promoted 条件：常驻、有 contentTitle、BigTextStyle、
-     * 无自定义 RemoteView、非分组摘要、未 colorized、渠道非 MIN。API 36 的
-     * `setRequestPromotedOngoing` 用反射调用，低版本静默退化为普通常驻通知。
+     * 无自定义 RemoteView、非分组摘要、未 colorized、渠道非 MIN。
+     *
+     * <p>提升请求同时用两种写法：字面量 extra {@code android.requestPromotedOngoing}
+     * （社区在 HyperOS 4.0 / Android 17 真机验证过）与反射调用
+     * {@code setRequestPromotedOngoing}（compileSdk 35 没有该符号）。缺任一种都会
+     * 导致「通知是常驻的，但系统不把它当实时动态」，因此两种都设。
+     *
+     * <p>岛上显示的是 smallIcon + {@code setShortCriticalText}；不设这一项，即使通知
+     * 被提升，岛里也是空的。该方法在 API 36 才公开，同样用反射。
      */
     private static void postProgress(Context context, NotificationManagerCompat manager,
                                      NotificationPayload payload) {
@@ -122,6 +139,7 @@ final class TaskNotifications {
         PendingIntent content = PendingIntent.getActivity(context, 0, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         long startedAt = payload.startedAt > 0 ? payload.startedAt : System.currentTimeMillis();
+        String chip = progressChip(payload);
         Notification.Builder builder = new Notification.Builder(context, CHANNEL_PROGRESS)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(payload.title)
@@ -133,9 +151,14 @@ final class TaskNotifications {
                 .setShowWhen(true)
                 .setWhen(startedAt)
                 .setUsesChronometer(true)
+                .setProgress(0, 0, true)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setContentIntent(content);
+                .setContentIntent(content)
+                .addExtras(new Bundle());
         requestPromotion(builder);
+        setShortCriticalText(builder, chip);
+        // 焦点通知模板只在小米放行本应用时才附加；未放行时标准实时动态照常工作。
+        XiaomiFocus.apply(context, builder, payload.title, payload.body, chip);
         try {
             manager.notify(payload.notificationId(), builder.build());
         } catch (SecurityException ignored) {
@@ -143,15 +166,37 @@ final class TaskNotifications {
         }
     }
 
-    /** API 36 的 promoted ongoing 请求；低版本没有该方法时保持普通常驻通知。 */
+    /** 岛与状态栏胶囊上的短词；超过四个字会被系统截断，这里先收敛。 */
+    private static String progressChip(NotificationPayload payload) {
+        String title = payload.title == null ? "" : payload.title.trim();
+        if (title.isEmpty()) return "运行中";
+        return title.length() <= 6 ? title : title.substring(0, 6);
+    }
+
+    /** 提升为实时动态：字面量 extra + 反射方法双保险。 */
     private static void requestPromotion(Notification.Builder builder) {
+        Bundle extras = new Bundle();
+        extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true);
+        builder.addExtras(extras);
         if (Build.VERSION.SDK_INT < 36) return;
         try {
             Notification.Builder.class
                     .getMethod("setRequestPromotedOngoing", boolean.class)
                     .invoke(builder, true);
         } catch (ReflectiveOperationException ignored) {
-            // 平台未提供该 API：降级即可，不抛错。
+            // 平台未提供该 API：extra 已在，降级即可。
+        }
+    }
+
+    /** 岛上显示的短词（API 36 起公开）。 */
+    private static void setShortCriticalText(Notification.Builder builder, String text) {
+        if (Build.VERSION.SDK_INT < 36) return;
+        try {
+            Notification.Builder.class
+                    .getMethod("setShortCriticalText", String.class)
+                    .invoke(builder, text);
+        } catch (ReflectiveOperationException ignored) {
+            // 低版本没有胶囊，忽略。
         }
     }
 }
