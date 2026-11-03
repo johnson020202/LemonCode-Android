@@ -19,6 +19,7 @@ import {
   CODING_PLAN_PROVIDER_SPECS,
   type CodingPlanEntitlementState,
   type ModelProviderNavGroup,
+  type ModelProviderNavItem,
   type PresetProviderSpec,
 } from "@/settings/model-provider-section/constants.js";
 import { pickCodingPlanEntitlementProvider } from "@/lib/codingPlanProvider.js";
@@ -185,21 +186,46 @@ export function useModelProviderNavigation({
         "presetId" in item && item.presetId ? [item.presetId] : [],
       ),
     ]);
-    return [
-      {
-        id: "custom",
-        title: intl.formatMessage({ id: "settings.modelProvider.customTitle" }),
-        items: customProviders
-          .filter((provider) => !suppressedAccountProviderIds.has(provider.providerId))
-          .map((provider) => ({
-            key: createCustomProviderNodeKey(provider.providerId),
-            type: "custom" as const,
-            label: getProviderFormLabel(provider),
-            provider,
-            statusActive: provider.executable === true,
-          })),
-      },
+    // 账号组（已登录的内置供应商）必须始终可导航。
+    // 上一版把 preset 分组整组删掉，只留 custom，导致「已登录账号」在设置页
+    // 既看不到入口也切不过去——用户只能看到当前选中的那一个。
+    const presetItems: ModelProviderNavItem[] = [
+      ...presetProviders.map(({ id, displayName, provider }) => ({
+        key: createPresetProviderNodeKey(id),
+        type: "preset" as const,
+        presetId: id,
+        label: displayName,
+        provider,
+        displayName,
+        statusProvider: provider,
+        statusActive: provider?.executable === true,
+      })),
+      ...codingPlanItems.filter((item) => isStartPlanModelProviderId(item.presetId)),
     ];
+    const customItems: ModelProviderNavItem[] = customProviders
+      .filter((provider) => !suppressedAccountProviderIds.has(provider.providerId))
+      .map((provider) => ({
+        key: createCustomProviderNodeKey(provider.providerId),
+        type: "custom" as const,
+        label: getProviderFormLabel(provider),
+        provider,
+        statusActive: provider.executable === true,
+      }));
+
+    const groups: ModelProviderNavGroup[] = [];
+    if (presetItems.length > 0) {
+      groups.push({
+        id: "preset",
+        title: intl.formatMessage({ id: "settings.modelProvider.presetTitle" }),
+        items: presetItems,
+      });
+    }
+    groups.push({
+      id: "custom",
+      title: intl.formatMessage({ id: "settings.modelProvider.customTitle" }),
+      items: customItems,
+    });
+    return groups;
   }, [
     customProviders,
     codingPlanItems,

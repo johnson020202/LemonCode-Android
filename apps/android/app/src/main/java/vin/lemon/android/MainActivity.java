@@ -155,8 +155,8 @@ public final class MainActivity extends Activity {
         findViewById(R.id.notification_settings)
                 .setOnClickListener(view -> openNotificationSettings());
         startRuntime();
-        // 启动后静默检查一次；只有真正发现新版本才提示，不打断使用。
-        checkForUpdates(false);
+        // 启动即检查（含 6 小时间隔节流）；发现新版本弹出更新日志。
+        autoCheckForUpdates();
         requestNotificationPermission();
         // 进程被杀后常驻的进行中通知不会自行消失；启动时清掉上一次的残留。
         TaskNotifications.clearStaleProgress(this);
@@ -273,23 +273,22 @@ public final class MainActivity extends Activity {
 
             @Override public void onChecked(Updater.Release release) {
                 String current = Updater.currentVersion(MainActivity.this);
+                markUpdateChecked();
                 if (!AppVersion.isNewer(release.version, current)) {
                     updateStatus.setText(getString(R.string.update_latest, current));
                     if (manual) toast(getString(R.string.update_latest, current));
                     return;
                 }
                 updateStatus.setText(getString(R.string.update_available, release.version, current));
-                new AlertDialog.Builder(MainActivity.this)
-                        .setTitle(getString(R.string.update_available, release.version, current))
-                        .setMessage(release.notes.trim().isEmpty()
-                                ? getString(R.string.update_install) : release.notes.trim())
-                        .setNegativeButton(R.string.update_later, null)
-                        .setPositiveButton(R.string.update_install,
-                                (dialog, which) -> downloadUpdate(release))
-                        .show();
+                // 用户点过「稍后」的版本不再自动弹窗，只在手动检查时再提示。
+                if (!manual && release.version.equals(dismissedUpdateVersion())) {
+                    return;
+                }
+                showUpdateDialog(release, current);
             }
 
             @Override public void onError(String message) {
+                markUpdateChecked();
                 updateStatus.setText(getString(R.string.update_failed, message));
                 if (manual) toast(message);
             }
@@ -299,6 +298,50 @@ public final class MainActivity extends Activity {
                 Updater.install(MainActivity.this, apk);
             }
         });
+    }
+
+    /** 发现新版本时展示更新日志并给出下载/稍后两条路（对齐主流客户端的更新体验）。 */
+    private void showUpdateDialog(Updater.Release release, String current) {
+        String notes = release.notes == null ? "" : release.notes.trim();
+        String body = notes.isEmpty()
+                ? getString(R.string.update_available, release.version, current)
+                : getString(R.string.update_dialog_body, release.version, current, notes);
+        showPrompt(new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.update_dialog_title, release.version))
+                .setMessage(body)
+                .setNegativeButton(R.string.update_later, (dialog, which) ->
+                        rememberDismissedUpdate(release.version))
+                .setPositiveButton(R.string.update_download, (dialog, which) ->
+                        downloadUpdate(release)));
+    }
+
+    private static final String LAST_UPDATE_CHECK_AT = "last_update_check_at";
+    private static final String DISMISSED_UPDATE_VERSION = "dismissed_update_version";
+    /** 自动检查间隔：6 小时。启动、回前台都会触发，但不会频繁请求。 */
+    private static final long AUTO_UPDATE_INTERVAL_MS = 6L * 60L * 60L * 1000L;
+
+    private void markUpdateChecked() {
+        preferences.edit().putLong(LAST_UPDATE_CHECK_AT, System.currentTimeMillis()).apply();
+    }
+
+    private String dismissedUpdateVersion() {
+        return preferences.getString(DISMISSED_UPDATE_VERSION, "");
+    }
+
+    private void rememberDismissedUpdate(String version) {
+        preferences.edit().putString(DISMISSED_UPDATE_VERSION, version).apply();
+    }
+
+    /**
+     * 回到前台时按间隔自动检查更新。
+     *
+     * <p>以前只有首页那个「检查更新」按钮能触发，用户几乎不会主动点，等于没有更新通道。
+     * 这里改成启动 + 回前台自动检查，发现新版本直接弹更新日志。
+     */
+    private void autoCheckForUpdates() {
+        long last = preferences.getLong(LAST_UPDATE_CHECK_AT, 0L);
+        if (System.currentTimeMillis() - last < AUTO_UPDATE_INTERVAL_MS) return;
+        checkForUpdates(false);
     }
 
     private void downloadUpdate(Updater.Release release) {
@@ -328,6 +371,36 @@ public final class MainActivity extends Activity {
                                 Updater.install(MainActivity.this, apk);
                             }
                         })));
+    }
+
+    /**
+     * 镜像页窄屏布局修正。
+     *
+     * <p>远程构建把供应商导航列包在容器查询
+     * `hidden @min-[48rem]/provider-settings:block` 里：容器宽度需 ≥768px 才显示，
+     * 而手机视口只有 392px（或更窄），该列被永久隐藏，页面上只剩当前选中的
+     * 供应商，无法切换。「小米超级岛」之外的另一个同类问题是这处。
+     *
+     * <p>这里放开该列并压成 56px 图标条，与本机版窄屏形态一致；只作用于镜像页，
+     * 且用幂等标记避免重复注入。
+     */
+    private void injectMirrorLayoutFix(WebView view) {
+        String script = "(function(){"
+                + "if(document.getElementById('lcode-mirror-layout-fix'))return;"
+                + "var s=document.createElement('style');"
+                + "s.id='lcode-mirror-layout-fix';"
+                + "s.textContent='@media (max-width:767px){"
+                + "[class*=\"provider-settings:block\"]{display:block!important}"
+                // 恢复导航列占位并按图标条排布
+                + "[data-model-provider-split-panel]{grid-template-columns:56px minmax(0,1fr)!important}"
+                + "}';"
+                + "document.head.appendChild(s);"
+                + "})();";
+        try {
+            view.evaluateJavascript(script, null);
+        } catch (RuntimeException ignored) {
+            // 页面正在销毁：忽略即可，下次 onPageFinished 会重新注入。
+        }
     }
 
     private java.io.File agentLogFile() {
@@ -645,6 +718,11 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView source, String url) {
                 if (source != webView) return;
                 rememberPage(url);
+                // 镜像页（远程控制）来自远程构建，窄屏下供应商导航整列被
+                // `hidden @min-[48rem]/provider-settings:block` 隐藏，手机永远达不到
+                // 768px，导致「只能看到当前这一个供应商」。这里注入样式放开该列，
+                // 让它按 56px 图标条渲染（本机版就是这种形态）。
+                if (mirrorSessionHost != null) injectMirrorLayoutFix(source);
                 // 冷启动时先到的授权回调在这里补发一次。
                 deliverOAuthCallback();
             }
@@ -1157,6 +1235,12 @@ public final class MainActivity extends Activity {
         // 页面里每 30s 一次的 setInterval。暂停后 Worker 约 75s 收不到 ping 就会关桥，
         // 表现就是「切到后台不到一分钟掉线」。后台保活改由 MirrorKeepAliveService 承担。
         super.onPause();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        // 回前台也检查一次（同样受 6 小时间隔约束），不必让用户专门跑回首页点按钮。
+        autoCheckForUpdates();
     }
 
     @Override protected void onDestroy() {
