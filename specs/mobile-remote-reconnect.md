@@ -12,6 +12,14 @@
 - Desktop continuous 与手机 web-remote-replayable 继续使用已有 Host；此修复不另起 Agent，不放宽吊销、单房间桥槽或一次性链接校验。
 - 本阶段只修复和验证；不推送桌面 tag、不推送 Worker 仓库或部署。后续发布前从修复后的源码重新构建手机资源，并分别发布桌面与 Worker。
 
+## Android 壳后台保活（2026-11-03）
+
+- 心跳的**唯一发送者**仍是页面内的 `connectBridgedDataSocket`（每 30s 一条 `{"type":"ping"}`，§3.4）；原生壳不新建第二条连接、不自己解析协议，只负责在后台替页面**补拍**。
+- 原生壳**不得调用 `WebView.onPause()`**：它会暂停 WebView 的 JS 定时器，导致后台 30s 心跳停摆，Worker 约 75s 回收桥槽，表现就是「切后台不到一分钟掉线」。
+- 镜像页打开期间运行 `MirrorKeepAliveService`（`foregroundServiceType=connectedDevice` + `PARTIAL_WAKE_LOCK`），每 20s 调用页面导出的 `window.__lcodeRemotePingTick`；该函数由 `pairingSockets.ts` 注册，指向当前活动桥接的同一个发送器，断开时与定时器一起摘除，避免把 ping 发到已关闭的套接字。
+- 前台服务只在镜像页存活：切回本机工作区、`disposeWebView()` 或退出应用都立即停止并清空注入目标，不常驻耗电。
+- 回到前台时若连接已落到 `failed`（后台节流把重试预算耗光），`MirrorSessionGate` 在 `visibilitychange` 直接复用设备凭据重新恢复，不要求用户手动点重试；`reconnecting` 不重复触发，避免两个重试所有者互相打断。
+
 ## 所有者与事件顺序
 
 存储仅拒绝写入时，当前标签页的版本化 sessionStorage 降级记录优先，不在读取时反向覆盖其它标签页的持久授权。清理时逐个载体比较房间和凭据；明确设备吊销则退休所有匹配凭据的副本，迟到失败不能清除其它房间的新恢复结果。

@@ -1943,7 +1943,15 @@ export function SettingsPage({
                             localWorkspacePath={activeWorkspaceTab?.localWorkspacePath}
                           />
                         ) : activeSection === "remoteControl" ? (
-                          <RemoteControlSettingsSection />
+                          // 设置页的扫码入口与侧栏 footer 弹框并存；两处都用激活工作区
+                          // 组装镜像 target，读同一份 Main 配对状态与 pairingUrl。
+                          <RemoteControlSettingsSection
+                            mirrorWorkspace={{
+                              remoteSessionId: activeWorkspaceTab?.remoteSessionId,
+                              workspacePath: activeWorkspacePath,
+                              workspaceIdentity: activeWorkspaceIdentity,
+                            }}
+                          />
                         ) : activeSection === "gitBackup" ? (
                           <GitBackupSection
                             workspacePath={activeWorkspacePath}

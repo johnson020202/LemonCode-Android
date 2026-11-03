@@ -8,6 +8,12 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 任务完成/失败提醒：Android 13 起需运行时授权；拒绝后应用功能不受影响。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 远程控制前台保活：镜像会话期间保持进程与网络存活，避免后台被系统节流断开。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Android 14 起 connectedDevice 类型要求至少具备一项网络/近场权限，否则 startForeground 抛 SecurityException。 -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -54,6 +60,15 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
             android:theme="@style/Theme.LemonCode" />
+        <!--
+          远程控制前台保活：只在镜像页打开期间运行。connectedDevice 类型表示
+          「与已配对电脑保持连接」，Android 15 的 dataSync 六小时上限不适用。
+        -->
+        <service
+            android:name=".MirrorKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="true" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

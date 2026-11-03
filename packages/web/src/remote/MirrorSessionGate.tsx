@@ -163,18 +163,25 @@ export function MirrorSessionGate({
     handleDisconnect(current.generation, key, current.credential, current.roomId);
   }, [handleDisconnect]);
 
+  /**
+   * 回到前台立即恢复连接。
+   *
+   * 后台期间 JS 定时器被系统节流，重连监督者的重试循环可能在不可见时就耗尽预算并落到
+   * failed；等用户切回来才手动点「重试」是很差的体验。可见性恢复时若仍持有设备凭据，
+   * 直接重新发起一次恢复（凭据仍有效时 Worker 侧不会二次确认）。
+   */
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const handleVisible = () => {
+      if (document.visibilityState !== "visible") return;
       const current = stateRef.current;
-      if (
-        current.kind === "connected" &&
-        !document.hidden &&
-        !window.navigator.onLine
-      ) {
-        return;
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
+      if (current.kind === "pairing" || current.kind === "connected") return;
+      if (!credentialRef.current) return;
+      // reconnecting 的循环会随定时器恢复自行推进；这里只接管已经落到终态等待手动重试的情况。
+      if (current.kind === "reconnecting") return;
+      reconnectRef.current(current.roomId, current.credential);
+    };
+    document.addEventListener("visibilitychange", handleVisible);
+    return () => document.removeEventListener("visibilitychange", handleVisible);
   }, []);
 
   useEffect(

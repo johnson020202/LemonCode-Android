@@ -70,6 +70,11 @@
     <string name="update_later">稍后</string>
     <string name="update_failed">更新失败：%1$s</string>
     <string name="report_logs">上报诊断日志</string>
+    <!-- 远程控制前台保活：只在镜像页打开期间显示，避免系统节流 WebView 心跳。 -->
+    <string name="keepalive_channel">远程控制连接</string>
+    <string name="keepalive_channel_description">保持与电脑的远程控制连接不断开</string>
+    <string name="keepalive_title">远程控制已连接</string>
+    <string name="keepalive_body">正在保持与电脑工作区的连接，切到后台也不会断开。</string>
     <!-- 系统通知：应用不在前台时提醒任务结果与待确认事项。 -->
     <string name="notification_channel_tasks">任务提醒</string>
     <string name="notification_channel_tasks_description">任务完成或失败时提醒</string>

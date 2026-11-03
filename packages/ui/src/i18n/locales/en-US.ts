@@ -2403,6 +2403,7 @@ const enUS: Record<string, string> = {
     "The Worker domain is invalid; fix it above first.",
   "settings.remoteControl.pairing.error.accessKeyMissing":
     "No access key configured yet; save it first.",
+  "settings.remoteControl.pairing.section": "Connect a phone by QR code",
   "settings.remoteControl.security.section": "Security & privacy",
   "settings.remoteControl.allowNewDevices.title": "Allow new devices to pair",
   "settings.remoteControl.allowNewDevices.description":

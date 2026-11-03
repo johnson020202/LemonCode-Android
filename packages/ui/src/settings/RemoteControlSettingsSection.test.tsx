@@ -124,9 +124,10 @@ test("默认域名允许粘贴可选 Key，自建入口与安全隐私仍可见"
   )?.[0];
   assert.ok(accessKeyInput);
   assert.doesNotMatch(accessKeyInput, /disabled=""/);
-  // 手机配对已独立为 MobileRemoteControlPanel（侧栏 footer 弹框），设置段不再渲染配对 UI。
-  assert.doesNotMatch(markup, /data-testid="remote-control-pairing-panel"/);
-  assert.doesNotMatch(markup, /在这里生成二维码/);
+  // 扫码配对有两个入口：侧栏 footer 弹框与这里的基础设置分区。静态渲染不执行 effect，
+  // configLoading 保持初始 true，因此这里只断言分区标题在位、配对面板走加载态。
+  assert.match(markup, /手机扫码连接/);
+  assert.match(markup, /加载中/);
 });
 
 test("配对面板按 Main 推送的状态投影：等待/裁决/已就绪", () => {
@@ -135,7 +136,7 @@ test("配对面板按 Main 推送的状态投影：等待/裁决/已就绪", () 
   const unknown = renderPairingPanel({});
   assert.match(unknown, /data-testid="remote-control-pairing-panel"/);
   assert.match(unknown, /状态未知/);
-  assert.match(unknown, /无法确认当前是否正在镜像/);
+  assert.match(unknown, /无法确认当前是否有设备在线/);
   assert.match(unknown, /开启等待/);
   assert.doesNotMatch(unknown, /未在等待/);
 
@@ -147,7 +148,7 @@ test("配对面板按 Main 推送的状态投影：等待/裁决/已就绪", () 
     pairing: { state: "waiting", roomId: "room", expiresAt: 1_700_000_000_000 },
     pairingUrl: "https://worker.example/p/room#c=cap",
   });
-  assert.match(waiting, /等待手机连接/);
+  assert.match(waiting, /等待远程设备连接/);
   assert.match(waiting, /data-testid="remote-control-pairing-url"/);
   assert.match(waiting, /复制链接/);
   assert.match(waiting, /刷新二维码/);
@@ -170,7 +171,7 @@ test("配对面板按 Main 推送的状态投影：等待/裁决/已就绪", () 
     pairing: { state: "bridged", roomId: "room" },
   });
   assert.match(bridged, /已就绪/);
-  assert.match(bridged, /完全一致的操作能力/);
+  assert.match(bridged, /与桌面使用者一致的操作能力/);
   assert.match(bridged, /停止/);
 });
 
@@ -180,7 +181,7 @@ test("waiting 但 capability 已消费（无链接）时提示刷新二维码，
     pairing: { state: "waiting", roomId: "room", expiresAt: 1_700_000_000_000 },
     pairingUrl: null,
   });
-  assert.match(stale, /请刷新生成新的二维码/);
+  assert.match(stale, /请刷新二维码/);
   assert.match(stale, /刷新二维码/);
   assert.doesNotMatch(stale, /data-testid="remote-control-pairing-url"/);
 });

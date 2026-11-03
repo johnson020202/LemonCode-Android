@@ -124,6 +124,26 @@ export function openPairingSocket(url: string, onOpen: () => void): Promise<Pair
 const HEARTBEAT_INTERVAL_MS = 30_000; // §3.4:手机数据套接字每 30s 一条 TEXT {"type":"ping"}
 const BRIDGE_OPEN_TIMEOUT_MS = 15_000; // bridge.open 是授权后 Worker 的首帧,超时视为建桥失败
 
+/**
+ * 原生壳（Android 前台服务）在后台直接驱动的心跳钩子。
+ *
+ * 页面退到后台后浏览器会把 JS 定时器节流到每分钟一次甚至暂停，而 Worker 只容忍约 75s
+ * 无 ping。原生侧持有前台服务与 WakeLock，每 20s 调用一次这里，绕过定时器节流；
+ * 只有当前确实存在活动桥接时才会发送，避免页面切走后误发。
+ */
+let activeBridgeHeartbeat: (() => void) | null = null;
+
+/** 供原生壳调用：仍持有一个活动桥接时补发一次心跳。 */
+export function pingRemoteBridgeNow(): void {
+  activeBridgeHeartbeat?.();
+}
+
+if (typeof window !== "undefined") {
+  // 原生壳按固定脚本名求值，改名会静默失效；与 MirrorKeepAliveService 的 PING_SCRIPT 对应。
+  (window as { __lcodeRemotePingTick?: () => void }).__lcodeRemotePingTick =
+    pingRemoteBridgeNow;
+}
+
 export class MobileBridgeError extends Error {
   constructor(
     readonly key: PairingFailureKey,
@@ -155,12 +175,19 @@ export function connectBridgedDataSocket(
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let socket: WebSocket | undefined;
     let resolveBridgeOpen: (() => void) | undefined;
+    let ownedPing: (() => void) | null = null;
 
     const stopHeartbeat = () => {
       if (heartbeat !== undefined) {
         clearInterval(heartbeat);
         heartbeat = undefined;
       }
+      // 原生补拍与页面定时器同生共死：套接字关闭后不能再往旧连接发 ping。
+      // 只摘自己那一份——重连时新连接已先注册，旧连接的迟到 close 不能把新钩子清掉。
+      if (ownedPing !== null && activeBridgeHeartbeat === ownedPing) {
+        activeBridgeHeartbeat = null;
+      }
+      ownedPing = null;
     };
     const fail = (key: PairingFailureKey, detail?: string) => {
       if (settled) {
@@ -195,11 +222,15 @@ export function connectBridgedDataSocket(
       },
       onOpenSocket: (ws) => {
         socket = ws;
-        heartbeat = setInterval(() => {
+        const sendPing = () => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send('{"type":"ping"}');
           }
-        }, HEARTBEAT_INTERVAL_MS);
+        };
+        heartbeat = setInterval(sendPing, HEARTBEAT_INTERVAL_MS);
+        // 前台服务用同一个发送器补拍；断开后必须摘掉，否则会把心跳发到已关闭的套接字。
+        ownedPing = sendPing;
+        activeBridgeHeartbeat = sendPing;
         ws.addEventListener("message", (event) => {
           if (parsePairingControlFrame(event.data)?.type === "bridge.open") {
             resolveBridgeOpen?.();

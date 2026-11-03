@@ -2253,6 +2253,7 @@ const zhCN: Record<string, string> = {
   "settings.remoteControl.pairing.error.roomRegenerationFailed": "配对房间重建失败，请重试。",
   "settings.remoteControl.pairing.error.workerBaseUrlInvalid": "Worker 域名无效，请先在上方修正。",
   "settings.remoteControl.pairing.error.accessKeyMissing": "尚未配置接入 Key，请先保存。",
+  "settings.remoteControl.pairing.section": "手机扫码连接",
   "settings.remoteControl.security.section": "安全与隐私",
   "settings.remoteControl.allowNewDevices.title": "允许新设备配对",
   "settings.remoteControl.allowNewDevices.description":

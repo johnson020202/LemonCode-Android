@@ -73,6 +73,7 @@
 
 1. **设置(基础设置 → 远程控制)**:启用开关;Worker 域名;自建 Worker 接入 Key(凭据保存复用 `remoteWorkspaceHistory` 的凭据集中管理机制,不进明文配置);安全隐私——允许新设备配对开关、已授权设备列表(名称/授权时间/最近在线)+吊销、配对链接有效期、空闲自动断开;「测试连接」。对应 `packages/ui/src/settings/settingsPageConfig.ts` 的 `BASE_SETTINGS_SECTIONS`(basics 组)注册 section。
    - **双入口规则(2026-09-29)**:`remoteControl` 必须显示在设置侧栏「基础设置」组;同时保留 `WorkspaceSidebarFooter` 中「连接使用」与设置齿轮之间的手机图标快捷入口。快捷入口继续弹出 `MobileRemoteControlPanel`;弹框内「远程控制设置」仍经 `setPendingSettingsSection("remoteControl")` + `openSettingsTab()` 直达同一分区。两处入口只复用同一 `useRemoteControl`/Main 配置事实源,不复制状态。入口平台门禁与分区注册同源(仅桌面平台三布尔任一为真);Web/手机视图均不注册分区、不显示 footer 入口。
+   - **两处均可完整配对(2026-11-03)**:设置分区内的 `RemoteControlSettingsSection` 直接渲染 `RemotePairingPanel`,与 footer 弹框一样提供二维码、**复制链接**、刷新与停止;设置页从 `SettingsPage` 传入当前激活 workspace 组装镜像 target,两处读同一份 Main 状态与同一个 `pairingUrl`。复制链接路径在两处都必须保留,不得因新增二维码位置而移除。
    - 官方托管地址为空时使用 `https://code.lemon.vin`。任何有效 Worker 地址（含默认地址）下 Key 输入、粘贴和保存始终可用；默认地址留空可直接使用，用户保存 Key 后，Main 在「测试连接」和 host 隧道握手中都发送该 Key。非默认自建 Worker 仍要求先保存 Key。主开关的前置条件为“有效 Worker 地址 + (默认地址或已保存 Key)”。
 2. **配对面板**:对齐截图形态(等待手机连接/已就绪/停止/刷新二维码/复制链接);「开启等待」驱动 Main 出站注册并生成二维码;「停止」关闭房间并断开出站。状态未知时「开启等待」先由 `RemotePairingPanel` 的单一本地布尔状态打开二次确认，再在确认后调用既有 `onStart`;取消不能触发 Main 命令。该确认框从 footer Popover 内触发时，层级必须满足“父 Popover < 确认遮罩 < 确认内容”，确认内容不得被自己的遮罩覆盖，也不得产生无法点击的残留遮罩。
 3. **Attachment 接线**:Main 收到配对完成事件后,经 `attachRemoteWorkspaceSessionHost`(`desktopRemoteSessions.ts:832`,现为已实现无调用方)把手机接入窗口 Host——这将是该入口的首个生产调用方;Main 维护「Worker WS ↔ attachment port」的帧泵,只做转发。

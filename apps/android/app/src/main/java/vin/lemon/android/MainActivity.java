@@ -513,8 +513,16 @@ public final class MainActivity extends Activity {
         } else if (initialUrl == null) {
             mirrorSessionHost = null;
         }
+        // 只有镜像页需要后台保活：本机工作区的会话跑在手机内部，进程被杀不影响电脑。
+        if (mirrorSessionHost != null) {
+            MirrorKeepAliveService.start(this);
+        } else {
+            MirrorKeepAliveService.stop(this);
+        }
         WebView view = new WebView(this);
         webView = view;
+        // 前台服务据此向镜像页推送心跳拍点；本机工作区不需要，置空即停止注入。
+        MirrorKeepAliveService.setTarget(mirrorSessionHost != null ? view : null);
         view.setSaveEnabled(false);
         view.setSaveFromParentEnabled(false);
         view.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
@@ -1020,6 +1028,8 @@ public final class MainActivity extends Activity {
 
     private void disposeWebView() {
         cancelFileCallback();
+        // 页面即将销毁：先断开保活服务的注入目标，避免它对已 destroy 的 WebView 求值。
+        MirrorKeepAliveService.clearTarget();
         WebView old = webView;
         webView = null;
         if (old == null) return;
@@ -1100,13 +1110,10 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onPause() {
-        if (webView != null) webView.onPause();
+        // 不能调用 webView.onPause()：它会暂停 WebView 的 JS 定时器，而手机远控的心跳正是
+        // 页面里每 30s 一次的 setInterval。暂停后 Worker 约 75s 收不到 ping 就会关桥，
+        // 表现就是「切到后台不到一分钟掉线」。后台保活改由 MirrorKeepAliveService 承担。
         super.onPause();
-    }
-
-    @Override protected void onResume() {
-        super.onResume();
-        if (webView != null) webView.onResume();
     }
 
     @Override protected void onDestroy() {
@@ -1114,6 +1121,8 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null) {
             getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
         }
+        mirrorSessionHost = null;
+        MirrorKeepAliveService.stop(this);
         disposeWebView();
         super.onDestroy();
     }
