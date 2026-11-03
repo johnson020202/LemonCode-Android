@@ -152,10 +152,14 @@ public final class MainActivity extends Activity {
                 this,
                 new java.io.File(getFilesDir(), "runtime.log"),
                 agentLogFile()));
+        findViewById(R.id.notification_settings)
+                .setOnClickListener(view -> openNotificationSettings());
         startRuntime();
         // 启动后静默检查一次；只有真正发现新版本才提示，不打断使用。
         checkForUpdates(false);
         requestNotificationPermission();
+        // 进程被杀后常驻的进行中通知不会自行消失；启动时清掉上一次的残留。
+        TaskNotifications.clearStaleProgress(this);
         // 应用被授权回调冷启动时，页面还没建好，先存下来等 onPageFinished 再投递。
         String oauthCallback = OAuthCallback.accept(intentData(getIntent()));
         if (oauthCallback != null) pendingOAuthCallback = oauthCallback;
@@ -225,6 +229,30 @@ public final class MainActivity extends Activity {
         }
         requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},
                 NOTIFICATION_PERMISSION);
+    }
+
+    /**
+     * 打开系统通知设置页，让用户开启「实时动态」。
+     *
+     * <p>Android 16 起该开关位于应用通知设置页；优先跳到 promoted 通知专属页
+     * （compileSdk 35 没有该常量，用字符串），失败再回退到通用应用通知设置。
+     */
+    private void openNotificationSettings() {
+        if (Build.VERSION.SDK_INT >= 36) {
+            try {
+                startActivity(new Intent("android.settings.MANAGE_APP_PROMOTED_NOTIFICATIONS")
+                        .setData(android.net.Uri.parse("package:" + getPackageName())));
+                return;
+            } catch (ActivityNotFoundException ignored) {
+                // 部分 ROM 没有独立页面，回退到应用通知设置。
+            }
+        }
+        try {
+            startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName()));
+        } catch (ActivityNotFoundException exception) {
+            toast(R.string.notification_settings_unavailable);
+        }
     }
 
     /**

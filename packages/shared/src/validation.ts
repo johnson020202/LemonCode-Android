@@ -116,6 +116,8 @@ export const rendererLogPayloadSchema = z.object({
 export const taskNotificationPayloadSchema = z.object({
   taskId: nonEmptyStringSchema,
   status: z.enum([
+    "running",
+    "dismiss",
     "completed",
     "failed",
     "permission_request",
@@ -125,6 +127,7 @@ export const taskNotificationPayloadSchema = z.object({
   requestId: nonEmptyStringSchema.optional(),
   title: z.string(),
   body: z.string(),
+  startedAt: z.number().finite().nonnegative().optional(),
 });
 
 export const telemetryRendererContextSchema = z.object({

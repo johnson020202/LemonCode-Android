@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 任务完成/失败提醒：Android 13 起需运行时授权；拒绝后应用功能不受影响。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16 Live Updates：任务进行中的常驻实时动态通知（非运行时权限）。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- 远程控制前台保活：镜像会话期间保持进程与网络存活，避免后台被系统节流断开。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />

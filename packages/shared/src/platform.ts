@@ -50,10 +50,19 @@ export type {
 
 export interface TaskNotificationPayload {
   taskId: string;
-  status: "completed" | "failed" | "permission_request" | "elicitation_request" | "feedback_update";
+  status:
+    | "running"
+    | "dismiss"
+    | "completed"
+    | "failed"
+    | "permission_request"
+    | "elicitation_request"
+    | "feedback_update";
   requestId?: string;
   title: string;
   body: string;
+  /** running：任务开始时间（epoch ms），Android 侧用它显示状态栏计时器。 */
+  startedAt?: number;
 }
 
 /** Main 将一次能够定位真实 tab 的 browser-use 操作投递给其 origin renderer。 */
@@ -736,6 +745,13 @@ export interface IPlatformService {
 
   /** 触发任务状态对应的系统通知，由宿主环境决定是否真正展示 */
   showTaskNotification(payload: TaskNotificationPayload): void;
+
+  /**
+   * 是否支持任务进行中的实时动态通知（Android 16 Live Updates）。
+   *
+   * 仅安卓壳为 true；桌面/Web 没有常驻进度通知，也不该为 running 状态产生通知。
+   */
+  supportsLiveTaskNotifications?: boolean;
 
   /** 通过宿主环境统一上报 UI 侧 telemetry 事件 */
   reportTelemetryEvent(payload: RendererTelemetryEventPayload): Promise<void>;

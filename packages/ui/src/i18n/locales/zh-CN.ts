@@ -1949,6 +1949,8 @@ const zhCN: Record<string, string> = {
   "settings.notificationSoundDescription": "通知开启后，可单独关闭任务通知提示音。",
   "notification.taskWithTitle": "任务：{title}",
   "notification.taskWaiting": "任务等待你的确认",
+  "notification.running": "任务运行中",
+  "notification.runningBody": "正在执行…",
   "notification.completed": "任务已完成",
   "notification.completedBody": "任务已完成",
   "notification.error": "任务出错",

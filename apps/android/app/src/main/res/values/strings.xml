@@ -80,4 +80,9 @@
     <string name="notification_channel_tasks_description">任务完成或失败时提醒</string>
     <string name="notification_channel_actions">待你确认</string>
     <string name="notification_channel_actions_description">需要你授权或回答时提醒</string>
+    <!-- 任务进行中的实时动态：常驻通知 + 状态栏计时，Android 16 起可上状态栏胶囊。 -->
+    <string name="notification_channel_progress">任务进行中</string>
+    <string name="notification_channel_progress_description">任务运行期间常驻显示进度与已用时间</string>
+    <string name="notification_settings">通知与实时动态设置</string>
+    <string name="notification_settings_unavailable">无法打开系统通知设置。</string>
 </resources>

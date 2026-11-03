@@ -6,6 +6,7 @@ import type { IntlInstance } from "@/i18n/index.js";
 import { logger } from "@/logger.js";
 import {
   collectPendingInteractionNotificationPayloads,
+  collectRunningTaskNotificationPayloads,
   collectTerminalTaskNotificationPayloads,
 } from "@/lib/taskNotificationOrchestrator.js";
 import {
@@ -16,7 +17,10 @@ import {
 import type { SessionsIndexStoreStatus } from "@/v4/sessionsIndexStore.js";
 
 type FormatMessage = IntlInstance["formatMessage"];
-type TaskNotificationPlatform = Pick<IPlatformService, "showTaskNotification">;
+type TaskNotificationPlatform = Pick<
+  IPlatformService,
+  "showTaskNotification" | "supportsLiveTaskNotifications"
+>;
 
 interface WorkspaceTerminalTaskNotificationsParams {
   workspacePath: string;
@@ -113,9 +117,17 @@ export function useWorkspaceTerminalTaskNotifications({
     status: "idle",
   });
   const previousBySessionIdRef = useRef<Map<string, SessionSummary> | null>(null);
+  /** 进行中通知：首次观察到 running 的时间，供状态栏计时器使用。 */
+  const runningStartedAtRef = useRef<Map<string, number>>(new Map());
+  const runningLastEmittedAtRef = useRef<Map<string, number>>(new Map());
+  /** 当前 snapshot 的最新会话列表；visibilitychange 回调不能依赖闭包里的旧 state。 */
+  const sessionsRef = useRef<readonly SessionSummary[]>([]);
+  sessionsRef.current = indexState.sessions;
 
   useEffect(() => {
     previousBySessionIdRef.current = null;
+    runningStartedAtRef.current.clear();
+    runningLastEmittedAtRef.current.clear();
     setIndexState({ signature, sessions: [], status: "idle" });
   }, [signature]);
 
@@ -187,8 +199,86 @@ export function useWorkspaceTerminalTaskNotifications({
     for (const payload of payloads) {
       showTaskNotification(platform, payload);
     }
+
+    // 进行中通知（Android 16 Live Updates）：只有安卓壳支持，桌面/Web 不产生。
+    if (platform.supportsLiveTaskNotifications) {
+      const now = Date.now();
+      const runningPayloads = collectRunningTaskNotificationPayloads({
+        previousBySessionId,
+        sessions: indexState.sessions,
+        formatMessage,
+        now,
+        startedAtBySessionId: runningStartedAtRef.current,
+        lastEmittedAtBySessionId: runningLastEmittedAtRef.current,
+      });
+      for (const payload of runningPayloads) {
+        if (!runningStartedAtRef.current.has(payload.taskId)) {
+          runningStartedAtRef.current.set(payload.taskId, payload.startedAt ?? now);
+        }
+        runningLastEmittedAtRef.current.set(payload.taskId, now);
+        showTaskNotification(platform, payload);
+      }
+      // 会话离开 running（终态或消失）后回收计时与节流记录，避免 Map 无限增长。
+      const runningIds = new Set(
+        indexState.sessions
+          .filter((session) => session.phase === "running")
+          .map((session) => session.sessionId),
+      );
+      const terminalIds = new Set(payloads.map((payload) => payload.taskId));
+      for (const id of runningStartedAtRef.current.keys()) {
+        if (runningIds.has(id)) continue;
+        runningStartedAtRef.current.delete(id);
+        runningLastEmittedAtRef.current.delete(id);
+        // 终态通知会复用同一 notificationId 替换进行中通知；只有会话直接消失
+        // （没有终态边沿）时才需要显式清除，否则通知栏会一直挂着。
+        if (!terminalIds.has(id)) {
+          showTaskNotification(platform, {
+            taskId: id,
+            status: "dismiss",
+            title: "",
+            body: "",
+          });
+        }
+      }
+    }
+
     previousBySessionIdRef.current = nextBySessionId;
   }, [enabled, formatMessage, indexState, platform, signature]);
+
+  /**
+   * App 切到后台时为所有运行中会话补发进行中通知。
+   *
+   * 用户可能在前台启动任务后再切走；那一刻不会有 phase 变化，只靠上面的边沿投影
+   * 会漏掉。这里在 visibilitychange → hidden 时强制补一次，重复投递由同一
+   * notificationId 覆盖，不会堆叠。
+   */
+  useEffect(() => {
+    if (!enabled || !platform?.supportsLiveTaskNotifications) return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") return;
+      const sessions = sessionsRef.current;
+      if (sessions.length === 0) return;
+      const now = Date.now();
+      const payloads = collectRunningTaskNotificationPayloads({
+        previousBySessionId: previousBySessionIdRef.current ?? new Map(),
+        sessions,
+        formatMessage,
+        now,
+        startedAtBySessionId: runningStartedAtRef.current,
+        lastEmittedAtBySessionId: runningLastEmittedAtRef.current,
+        force: true,
+      });
+      for (const payload of payloads) {
+        if (!runningStartedAtRef.current.has(payload.taskId)) {
+          runningStartedAtRef.current.set(payload.taskId, payload.startedAt ?? now);
+        }
+        runningLastEmittedAtRef.current.set(payload.taskId, now);
+        showTaskNotification(platform, payload);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [enabled, formatMessage, platform]);
 }
 
 /**

@@ -77,6 +77,71 @@ export function collectTerminalTaskNotificationPayloads(params: {
   return payloads;
 }
 
+/** 同一会话进行中通知的最小更新间隔：流式预览变化很频繁，10s 一次足够。 */
+export const RUNNING_NOTIFICATION_THROTTLE_MS = 10_000;
+
+function runningPayloadForSession(params: {
+  session: SessionSummary;
+  startedAt: number;
+  formatMessage: FormatMessage;
+}): TaskNotificationPayload {
+  const preview = params.session.lastAssistantPreview?.trim();
+  return {
+    taskId: params.session.sessionId,
+    status: "running",
+    title: params.formatMessage({ id: "notification.running" }),
+    body:
+      preview ||
+      taskTitleBody(params.session.title, "notification.runningBody", params.formatMessage),
+    startedAt: params.startedAt,
+  };
+}
+
+/**
+ * 进行中通知投影（Android Live Updates）。
+ *
+ * 只在两种时机产出：会话从非 running 进入 running，或运行中预览变化且距上次更新
+ * 超过节流窗口。终态由 {@link collectTerminalTaskNotificationPayloads} 负责，
+ * 复用同一 taskId 派生的 notificationId 替换进行中通知。
+ */
+export function collectRunningTaskNotificationPayloads(params: {
+  previousBySessionId: ReadonlyMap<string, SessionSummary>;
+  sessions: readonly SessionSummary[];
+  formatMessage: FormatMessage;
+  now: number;
+  startedAtBySessionId: ReadonlyMap<string, number>;
+  lastEmittedAtBySessionId: ReadonlyMap<string, number>;
+  /** 后台补发：忽略节流与预览是否变化，为所有运行中会话各产出一次。 */
+  force?: boolean;
+}): TaskNotificationPayload[] {
+  const payloads: TaskNotificationPayload[] = [];
+  for (const session of params.sessions) {
+    if (session.phase !== "running") continue;
+
+    const previous = params.previousBySessionId.get(session.sessionId);
+    const becameRunning = !previous || previous.phase !== "running";
+    const previewChanged =
+      previous !== undefined && previous.lastAssistantPreview !== session.lastAssistantPreview;
+    const lastEmittedAt = params.lastEmittedAtBySessionId.get(session.sessionId) ?? 0;
+
+    if (!params.force) {
+      if (!becameRunning) {
+        if (!previewChanged) continue;
+        if (params.now - lastEmittedAt < RUNNING_NOTIFICATION_THROTTLE_MS) continue;
+      }
+    }
+
+    payloads.push(
+      runningPayloadForSession({
+        session,
+        startedAt: params.startedAtBySessionId.get(session.sessionId) ?? params.now,
+        formatMessage: params.formatMessage,
+      }),
+    );
+  }
+  return payloads;
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

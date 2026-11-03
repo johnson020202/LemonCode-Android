@@ -306,6 +306,8 @@ function createWebPlatform(): IPlatformService {
     ...(window.location.hostname === "127.0.0.1" &&
     typeof window.lemonAndroid?.postMessage === "function"
       ? {
+          // 安卓壳支持 Android 16 Live Updates：任务进行中可发常驻进度通知。
+          supportsLiveTaskNotifications: true,
           scanRemoteConnection: () => {
             window.lemonAndroid!.postMessage("scan");
           },
@@ -390,29 +392,47 @@ function createWebPlatform(): IPlatformService {
     reportTelemetryEvent: async () => {},
     reportArmsCustomEvent: () => Promise.resolve(),
     showTaskNotification: (payload) => {
-      if (document.hasFocus()) {
-        return;
-      }
-
-      // 安卓壳内：交给原生通知渠道，应用在后台时也能送达并进入任务栏。
-      if (
-        window.location.hostname === "127.0.0.1" &&
-        typeof window.lemonAndroid?.postMessage === "function"
-      ) {
+      const postAndroid = (next: typeof payload): boolean => {
+        if (
+          window.location.hostname !== "127.0.0.1" ||
+          typeof window.lemonAndroid?.postMessage !== "function"
+        ) {
+          return false;
+        }
         try {
           window.lemonAndroid.postMessage(
             "notify " +
               JSON.stringify({
-                taskId: payload.taskId,
-                status: payload.status,
-                title: payload.title,
-                body: payload.body,
+                taskId: next.taskId,
+                status: next.status,
+                title: next.title,
+                body: next.body,
+                ...(next.startedAt !== undefined ? { startedAt: next.startedAt } : {}),
               }),
           );
-          return;
+          return true;
         } catch {
-          // 原生通道不可用时退回浏览器通知
+          return false;
         }
+      };
+
+      if (document.hasFocus() && payload.status !== "dismiss") {
+        // 前台完成时终态通知会被抑制；但任务在后台跑过时可能留下常驻进度通知，
+        // 这里补一条 dismiss 把它清掉，避免「任务早已结束、通知栏还挂着」。
+        if (payload.status === "completed" || payload.status === "failed") {
+          postAndroid({ ...payload, status: "dismiss", body: "" });
+        }
+        return;
+      }
+
+      // 安卓壳内：交给原生通知渠道，应用在后台时也能送达并进入任务栏。
+      if (postAndroid(payload)) {
+        return;
+      }
+
+      // dismiss 只用于清除安卓常驻通知；浏览器没有对应目标，直接结束。
+      if (payload.status === "dismiss") {
+        return;
       }
 
       if (

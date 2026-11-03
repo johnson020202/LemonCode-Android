@@ -21,12 +21,29 @@ public final class NotificationPayload {
     public final String taskId;
     /** 等待用户授权或回答的通知走高优先级渠道，其余走普通渠道。 */
     public final boolean urgent;
+    /** 原始状态码：running 表示进行中，走实时动态常驻通知。 */
+    public final String status;
+    /** running 的任务开始时间（epoch ms）；0 表示未提供。 */
+    public final long startedAt;
 
-    private NotificationPayload(String title, String body, String taskId, boolean urgent) {
+    private NotificationPayload(String title, String body, String taskId, boolean urgent,
+                                String status, long startedAt) {
         this.title = title;
         this.body = body;
         this.taskId = taskId;
         this.urgent = urgent;
+        this.status = status;
+        this.startedAt = startedAt;
+    }
+
+    /** 任务进行中：发常驻进度通知，而不是一次性提醒。 */
+    public boolean isRunning() {
+        return "running".equals(status);
+    }
+
+    /** 清除该任务遗留的进行中通知（前台完成时终态通知被抑制，用它收尾）。 */
+    public boolean isDismiss() {
+        return "dismiss".equals(status);
     }
 
     /** 同一任务重复通知替换上一条，而不是堆积一列。 */
@@ -45,10 +62,14 @@ public final class NotificationPayload {
             String title = clean(object.optString("title", ""), MAX_TITLE);
             String body = clean(object.optString("body", ""), MAX_BODY);
             String taskId = clean(object.optString("taskId", ""), MAX_TASK_ID);
-            if (title.isEmpty()) return null;
             String status = object.optString("status", "");
+            // dismiss 只用于清除常驻通知，不需要标题；其余通知仍要求标题非空。
+            if (title.isEmpty() && !"dismiss".equals(status)) return null;
+            long startedAt = object.optLong("startedAt", 0L);
+            if (startedAt < 0L) startedAt = 0L;
             return new NotificationPayload(title, body, taskId,
-                    "permission_request".equals(status) || "elicitation_request".equals(status));
+                    "permission_request".equals(status) || "elicitation_request".equals(status),
+                    status, startedAt);
         } catch (JSONException exception) {
             return null;
         }

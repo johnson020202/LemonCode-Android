@@ -116,6 +116,14 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_small"
                 android:text="@string/report_logs" />
+            <!-- Android 16 实时动态开关在系统通知设置页；这里提供直达入口。 -->
+            <Button
+                android:id="@+id/notification_settings"
+                style="@style/Button.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
+                android:text="@string/notification_settings" />
             <Button
                 android:id="@+id/forget"
                 style="@style/Button.LemonCode.Destructive"

@@ -101,6 +101,10 @@ export function dispatchTaskNotification(options: {
   }
 
   const { taskId, status, requestId, title, body } = result.data;
+  // 进行中/清除只属于安卓实时动态；桌面没有常驻进度通知，忽略即可。
+  if (status === "running" || status === "dismiss") {
+    return false;
+  }
   const notificationTitle = title.trim();
   const notificationBody = body.trim();
   if (!notificationTitle || !notificationBody) {
