@@ -238,6 +238,10 @@ public final class MainActivity extends Activity {
      * （compileSdk 35 没有该常量，用字符串），失败再回退到通用应用通知设置。
      */
     private void openNotificationSettings() {
+        // 先如实报出本机的岛支持情况：用户与排障都需要知道卡在哪一层
+        // （系统不支持 / 协议达标但焦点通知未授权 / 已放行）。
+        String diagnostic = XiaomiFocus.describe(this);
+        if (!diagnostic.isEmpty()) toast(diagnostic);
         if (Build.VERSION.SDK_INT >= 36) {
             try {
                 startActivity(new Intent("android.settings.MANAGE_APP_PROMOTED_NOTIFICATIONS")
@@ -574,14 +578,21 @@ public final class MainActivity extends Activity {
         ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setAllowFileAccess(false);
         ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setBlockNetworkLoads(false);
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            // 镜像页（远程控制）由 Worker 以 https 托管，来源不是本机回环；只注册本机
+            // origin 会让该页面拿不到 window.lemonAndroid，任务通知在远控模式下永远发不出去。
+            // 这里把镜像 host 也注册进白名单，由 LocalBridgePolicy 逐条命令再校验：
+            // 只有 notify 允许来自镜像页，扫码/打开浏览器/主题等仍限本机。
+            java.util.Set<String> bridgeOrigins = new java.util.LinkedHashSet<>();
+            bridgeOrigins.add(origin.origin());
+            if (mirrorSessionHost != null) bridgeOrigins.add("https://" + mirrorSessionHost);
             WebViewCompat.addWebMessageListener(view, "lemonAndroid",
-                    java.util.Collections.singleton(origin.origin()),
+                    bridgeOrigins,
                     (source, message, sourceOrigin, isMainFrame, replyProxy) -> {
                         if (source != webView || message.getType() != WebMessageCompat.TYPE_STRING) return;
                         String data = message.getData();
                         String command = LocalBridgePolicy.commandOf(data);
                         if (!LocalBridgePolicy.allows(origin, command, source.getUrl(),
-                                String.valueOf(sourceOrigin), isMainFrame)) return;
+                                String.valueOf(sourceOrigin), isMainFrame, mirrorSessionHost)) return;
                         // WebMessageListener 可能在 Binder 线程回调；原生 UI 操作统一切回主线程。
                         runOnUiThread(() -> {
                             if ("scan".equals(command)) startScan();

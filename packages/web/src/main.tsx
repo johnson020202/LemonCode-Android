@@ -303,17 +303,21 @@ function createWebPlatform(): IPlatformService {
     },
     cancelPendingRemoteConnection: (_requestId?: string) => Promise.resolve(),
     disposeRemoteSession: () => Promise.resolve(),
-    ...(window.location.hostname === "127.0.0.1" &&
-    typeof window.lemonAndroid?.postMessage === "function"
+    // 只要在安卓壳内（原生注入了 lemonAndroid）就启用；镜像页同样需要实时动态。
+    // 扫码/手输网址仍由原生侧限制为本机回环页，这里只影响按钮是否出现。
+    ...(typeof window.lemonAndroid?.postMessage === "function"
       ? {
-          // 安卓壳支持 Android 16 Live Updates：任务进行中可发常驻进度通知。
           supportsLiveTaskNotifications: true,
-          scanRemoteConnection: () => {
-            window.lemonAndroid!.postMessage("scan");
-          },
-          enterRemoteConnectionUrl: () => {
-            window.lemonAndroid!.postMessage("url");
-          },
+          ...(window.location.hostname === "127.0.0.1"
+            ? {
+                scanRemoteConnection: () => {
+                  window.lemonAndroid!.postMessage("scan");
+                },
+                enterRemoteConnectionUrl: () => {
+                  window.lemonAndroid!.postMessage("url");
+                },
+              }
+            : {}),
         }
       : {}),
     isDockerAvailable: () => Promise.resolve(false),
@@ -393,10 +397,10 @@ function createWebPlatform(): IPlatformService {
     reportArmsCustomEvent: () => Promise.resolve(),
     showTaskNotification: (payload) => {
       const postAndroid = (next: typeof payload): boolean => {
-        if (
-          window.location.hostname !== "127.0.0.1" ||
-          typeof window.lemonAndroid?.postMessage !== "function"
-        ) {
+        // 不再限定 127.0.0.1：远程控制页由 Worker 以 https 托管，同样需要发通知。
+        // 原生侧 LocalBridgePolicy 会校验来源 host 必须是当前镜像会话，只有 notify
+        // 允许来自镜像页，因此这里放开不会扩大原生能力面。
+        if (typeof window.lemonAndroid?.postMessage !== "function") {
           return false;
         }
         try {

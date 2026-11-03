@@ -71,8 +71,30 @@ final class LocalBridgePolicy {
 
     static boolean allows(UrlPolicy.LocalOrigin origin, String command,
                           String pageUrl, String sourceOrigin, boolean isMainFrame) {
-        if (!isMainFrame || origin == null || !origin.allows(pageUrl)) return false;
-        if (!isSupportedCommand(command)) return false;
+        return allows(origin, command, pageUrl, sourceOrigin, isMainFrame, null);
+    }
+
+    /**
+     * 同上，但额外允许镜像页（远程控制）发送 {@code notify}。
+     *
+     * <p>镜像页由 Worker 以 https 托管，来源不是本机回环，原实现一律拒绝，导致
+     * 「远控模式下的任务通知」永远到不了系统——而远控正是手机端的主要用法。
+     * 这里只对 {@code notify} 放开，且要求来源 host 与当前镜像会话 host 完全一致；
+     * 扫码、打开浏览器、主题、OAuth 等本地动作仍只认本机回环，避免远程页面驱动原生 UI。
+     */
+    static boolean allows(UrlPolicy.LocalOrigin origin, String command,
+                          String pageUrl, String sourceOrigin, boolean isMainFrame,
+                          String mirrorHost) {
+        if (!isMainFrame || origin == null || !isSupportedCommand(command)) return false;
+        if (isLocalSource(origin, sourceOrigin)) return origin.allows(pageUrl);
+        if (isMirrorSource(sourceOrigin, mirrorHost) && isMirrorPage(pageUrl, mirrorHost)) {
+            return "notify".equals(command);
+        }
+        return false;
+    }
+
+    /** 本机回环页面的来源：必须精确到当前运行时端口，且无 userinfo/query/fragment。 */
+    private static boolean isLocalSource(UrlPolicy.LocalOrigin origin, String sourceOrigin) {
         try {
             URI source = new URI(sourceOrigin);
             String path = source.getRawPath();
@@ -85,6 +107,35 @@ final class LocalBridgePolicy {
                     && source.getRawFragment() == null
                     && (path == null || path.isEmpty() || "/".equals(path));
         } catch (URISyntaxException | NullPointerException exception) {
+            return false;
+        }
+    }
+
+    /** 镜像会话来源：https + 与当前镜像 host 完全一致 + 无 userinfo。 */
+    private static boolean isMirrorSource(String sourceOrigin, String mirrorHost) {
+        if (mirrorHost == null || sourceOrigin == null) return false;
+        try {
+            URI source = new URI(sourceOrigin);
+            return !source.isOpaque()
+                    && "https".equalsIgnoreCase(source.getScheme())
+                    && mirrorHost.equalsIgnoreCase(source.getHost())
+                    && source.getPort() == -1
+                    && source.getRawUserInfo() == null;
+        } catch (URISyntaxException exception) {
+            return false;
+        }
+    }
+
+    /** 页面本身也必须属于同一镜像 host。 */
+    private static boolean isMirrorPage(String pageUrl, String mirrorHost) {
+        if (mirrorHost == null || pageUrl == null) return false;
+        try {
+            URI page = new URI(pageUrl);
+            return !page.isOpaque()
+                    && "https".equalsIgnoreCase(page.getScheme())
+                    && mirrorHost.equalsIgnoreCase(page.getHost())
+                    && page.getRawUserInfo() == null;
+        } catch (URISyntaxException exception) {
             return false;
         }
     }
