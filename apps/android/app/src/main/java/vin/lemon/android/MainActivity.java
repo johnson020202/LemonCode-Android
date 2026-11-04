@@ -311,8 +311,13 @@ public final class MainActivity extends Activity {
                 .setMessage(body)
                 .setNegativeButton(R.string.update_later, (dialog, which) ->
                         rememberDismissedUpdate(release.version))
-                .setPositiveButton(R.string.update_download, (dialog, which) ->
-                        downloadUpdate(release)));
+                // 必须先关掉本弹窗再开始下载：showPrompt 有「已有弹窗在显示就直接
+                // 返回」的去重守卫，而 Android 是按钮回调跑完才关闭弹窗，回调里再弹
+                // 第二层确认框会被静默丢弃，用户看到的就是「点下载没反应」。
+                .setPositiveButton(R.string.update_download, (dialog, which) -> {
+                    dialog.dismiss();
+                    downloadUpdate(release);
+                }));
     }
 
     private static final String LAST_UPDATE_CHECK_AT = "last_update_check_at";
@@ -344,33 +349,53 @@ public final class MainActivity extends Activity {
         checkForUpdates(false);
     }
 
+    /**
+     * 开始下载并显示进度。
+     *
+     * <p>不再弹第二层确认框：更新对话框本身就是确认（「下载更新 / 稍后」），
+     * 再叠一层既多余，又会撞上 showPrompt 的去重守卫导致点了没反应。
+     * 下载状态统一显示在这个进度框里——首页那张 update_status 文本只在原生
+     * 首页可见，用户停在 WebView 工作区时看不到任何反馈。
+     */
     private void downloadUpdate(Updater.Release release) {
         final TextView updateStatus = findViewById(R.id.update_status);
-        showPrompt(new AlertDialog.Builder(this)
-                .setTitle(R.string.update_install)
-                .setMessage(getString(R.string.update_available, release.version,
-                        Updater.currentVersion(this)))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.update_install, (dialog, which) ->
-                        Updater.download(this, release, new Updater.Callback() {
-                            @Override public void onStatus(String message) {
-                                updateStatus.setText(message);
-                            }
+        final AlertDialog progress = new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.update_dialog_title, release.version))
+                .setMessage(R.string.update_downloading)
+                // 允许关闭：下载在后台线程继续，卡住时用户不至于被弹窗困住。
+                .setCancelable(true)
+                .create();
+        progress.show();
+        Updater.download(this, release, new Updater.Callback() {
+            @Override public void onStatus(String message) {
+                updateStatus.setText(message);
+                if (progress.isShowing()) progress.setMessage(message);
+            }
 
-                            @Override public void onChecked(Updater.Release ignored) {
-                                // 下载阶段不重复检查。
-                            }
+            @Override public void onChecked(Updater.Release ignored) {
+                // 下载阶段不重复检查。
+            }
 
-                            @Override public void onError(String message) {
-                                updateStatus.setText(getString(R.string.update_failed, message));
-                                toast(message);
-                            }
+            @Override public void onError(String message) {
+                updateStatus.setText(getString(R.string.update_failed, message));
+                dismissQuietly(progress);
+                toast(message);
+            }
 
-                            @Override public void onDownloaded(java.io.File apk) {
-                                updateStatus.setText(R.string.update_idle);
-                                Updater.install(MainActivity.this, apk);
-                            }
-                        })));
+            @Override public void onDownloaded(java.io.File apk) {
+                updateStatus.setText(R.string.update_idle);
+                dismissQuietly(progress);
+                Updater.install(MainActivity.this, apk);
+            }
+        });
+    }
+
+    private void dismissQuietly(AlertDialog dialog) {
+        try {
+            if (dialog.isShowing()) dialog.dismiss();
+        } catch (RuntimeException ignored) {
+            // 窗口已销毁：无需处理。
+        }
     }
 
     private java.io.File agentLogFile() {
