@@ -411,17 +411,19 @@ public final class MainActivity extends Activity {
      * 结果栅格没分列、图标列压在了详情上。这次两个都在，可见与不重叠同时满足。
      */
     private void injectMirrorNarrowLayoutFix(WebView view) {
+        // 只做三件事，且都不要碰高度：
+        //   1) 给两列栅格补上窄屏列宽（否则放开显示后会压成一列重叠）
+        //   2) 让被容器查询隐藏的导航列重新显示
+        //   3) 保持原有 hidden 语义
+        //
+        // 这里刻意不写 grid-template-rows / align-items / height：上一版写了
+        // align-items:start 与 height:auto，使栅格项不再纵向拉伸，内层
+        // overflow-y:auto 的滚动容器失去高度约束，「添加供应商」页因此无法滚动。
         String css = "@media (max-width:767px){"
                 + "[class*='provider-settings:grid-cols-']{"
-                + "display:grid!important;"
-                + "grid-template-columns:64px minmax(0,1fr)!important;"
-                + "grid-template-rows:minmax(0,1fr)!important;"
-                + "align-items:start!important"
+                + "grid-template-columns:64px minmax(0,1fr)!important"
                 + "}"
-                + "[class*='provider-settings:block']{"
-                + "display:block!important;position:static!important;"
-                + "height:auto!important;min-width:0!important"
-                + "}"
+                + "[class*='provider-settings:block']{display:block!important}"
                 + "[class*='provider-settings:hidden']{display:none!important}"
                 + "}";
         String script = "(function(){"
