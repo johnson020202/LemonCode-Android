@@ -179,10 +179,15 @@ export function applyTheme(theme: Theme) {
  *
  * <p>安卓壳的状态栏区域露出的是原生根视图背景，图标明暗也由原生控制。
  * 原生只按系统 uiMode 判断时，App 内选浅色而系统是深色会得到「黑底 + 浅色图标」，
- * 状态栏看起来就是消失。只在 127.0.0.1 的 WebView 里发，桌面端不受影响。
+ * 状态栏看起来就是消失。
+ *
+ * <p>原实现只在 127.0.0.1 页面里发，远程控制页（Worker 域名）永远发不出去，
+ * 原生只能退回系统主题。系统浅色 + 页面深色时，状态栏就是深底配深图标，
+ * 时间/信号/电量看不见——小米 15 Pro 上复现，小米 10 Pro 因系统正好是深色而正常。
+ * 现在只要原生注入了桥就上报；桌面端没有这个桥，不受影响。
  */
 function notifyNativeShellTheme(resolved: ResolvedTheme): void {
-  if (typeof window === "undefined" || window.location.hostname !== "127.0.0.1") return;
+  if (typeof window === "undefined") return;
   const bridge = (window as { lemonAndroid?: { postMessage(message: string): void } }).lemonAndroid;
   if (typeof bridge?.postMessage !== "function") return;
   try {

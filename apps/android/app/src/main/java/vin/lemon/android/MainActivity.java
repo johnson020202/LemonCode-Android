@@ -398,6 +398,66 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /**
+     * 镜像页窄屏布局修正：让供应商列表在手机上可见，且不与详情区重叠。
+     *
+     * <p>选择器对准该构建里**真实存在**的类（已在部署 CSS 里核对）：
+     * <ul>
+     *   <li>{@code @min-[48rem]/provider-settings:block} —— 导航列，宽度 ≥768px 才显示</li>
+     *   <li>{@code @min-[48rem]/provider-settings:grid-cols-[208px_minmax(0,1fr)]} —— 两列栅格</li>
+     * </ul>
+     * 上一版只放了 {@code display:block} 却用本机版的
+     * {@code data-model-provider-split-panel} 补列宽，而该构建没有这个属性，
+     * 结果栅格没分列、图标列压在了详情上。这次两个都在，可见与不重叠同时满足。
+     */
+    private void injectMirrorNarrowLayoutFix(WebView view) {
+        String css = "@media (max-width:767px){"
+                + "[class*='provider-settings:grid-cols-']{"
+                + "display:grid!important;"
+                + "grid-template-columns:64px minmax(0,1fr)!important;"
+                + "grid-template-rows:minmax(0,1fr)!important;"
+                + "align-items:start!important"
+                + "}"
+                + "[class*='provider-settings:block']{"
+                + "display:block!important;position:static!important;"
+                + "height:auto!important;min-width:0!important"
+                + "}"
+                + "[class*='provider-settings:hidden']{display:none!important}"
+                + "}";
+        String script = "(function(){"
+                + "var id='lcode-mirror-narrow-fix';"
+                + "var s=document.getElementById(id);"
+                + "if(!s){s=document.createElement('style');s.id=id;(document.head||document.documentElement).appendChild(s);}"
+                + "s.textContent=" + jsString(css) + ";"
+                + "return 'ok';"
+                + "})();";
+        try {
+            view.evaluateJavascript(script, null);
+        } catch (RuntimeException ignored) {
+            // 页面正在销毁：下次 onPageFinished 会重新注入。
+        }
+    }
+
+    /** 生成可安全嵌进 JS 字符串字面量的 JSON 形式。 */
+    private static String jsString(String value) {
+        StringBuilder out = new StringBuilder(value.length() + 16);
+        out.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"': out.append("\\\""); break;
+                case '\\': out.append("\\\\"); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                default:
+                    if (c < 0x20) out.append(String.format("\\u%04x", (int) c));
+                    else out.append(c);
+            }
+        }
+        out.append('"');
+        return out.toString();
+    }
+
     private java.io.File agentLogFile() {
         java.io.File dir = new java.io.File(getFilesDir(), "home/.lcode/cli/log");
         java.io.File[] files = dir.listFiles((d, name) -> name.endsWith(".jsonl"));
@@ -527,8 +587,59 @@ public final class MainActivity extends Activity {
         } else {
             root.setFitsSystemWindows(true);
         }
+        // 关掉系统给透明系统栏自动加的对比度蒙层。开着时系统会在状态栏/导航栏
+        // 与内容之间画一条半透明带子，皮肤上就是“割裂”。
+        if (Build.VERSION.SDK_INT >= 29) {
+            getWindow().setStatusBarContrastEnforced(false);
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
+        applyRoundedCorners(root);
+        View web = findViewById(R.id.web_container);
+        if (web != null) applyRoundedCorners(web);
         applySystemBarAppearance();
         root.requestApplyInsets();
+    }
+
+    /**
+     * 让界面边界跟随机身圆角。
+     *
+     * <p>手机屏幕是圆角，而应用内容默认铺满成直角矩形，四角会和机身弧线错开，
+     * 看起来“不贴边”。这里按设备实际圆角半径把根视图与 WebView 容器裁成圆角。
+     * 半径读系统资源；取不到或为 0（真直屏/平板）就保持原样。
+     */
+    private void applyRoundedCorners(View view) {
+        final int radius = resolveDeviceCornerRadius();
+        if (radius <= 0 || view == null) return;
+        view.setClipToOutline(true);
+        view.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override public void getOutline(View target, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, target.getWidth(), target.getHeight(), radius);
+            }
+        });
+    }
+
+    /**
+     * 读取设备真实圆角半径。
+     *
+     * <p>Android 12 起才有公开 API（{@code WindowInsets.getRoundedCorner}），能直接拿到
+     * 屏幕四角的实际半径；早于此版本没有可靠来源，返回 0 表示不裁剪。
+     * 不要用 {@code getIdentifier("rounded_corner_radius", "dimen", "android")} 这类
+     * 未公开资源名——大多数 ROM 上取不到，会静默失效。
+     */
+    private int resolveDeviceCornerRadius() {
+        if (Build.VERSION.SDK_INT < 31) return 0;
+        try {
+            WindowInsets insets = getWindowManager().getCurrentWindowMetrics().getWindowInsets();
+            android.view.RoundedCorner topLeft =
+                    insets.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT);
+            if (topLeft != null && topLeft.getRadius() > 0) return topLeft.getRadius();
+            android.view.RoundedCorner topRight =
+                    insets.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_RIGHT);
+            if (topRight != null && topRight.getRadius() > 0) return topRight.getRadius();
+        } catch (RuntimeException exception) {
+            // 部分 ROM 不实现该 API：不裁剪即可，不影响其它布局。
+        }
+        return 0;
     }
 
     /**
@@ -548,13 +659,16 @@ public final class MainActivity extends Activity {
         applySystemBarAppearance();
     }
 
-    /** 系统栏图标明暗：优先页面主题，未知时退回系统 uiMode。 */
+    /** 系统栏图标明暗：优先页面主题；未收到上报时按应用默认（深色）。 */
     private void applySystemBarAppearance() {
         Boolean configured = appThemeIsLight;
-        boolean light = configured != null
-                ? configured
-                : (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
+        // 未收到页面上报时按应用默认深色处理，不再退回系统 uiMode。
+        //
+        // 应用默认主题是 zai-dark，页面挂载后会用 theme 命令上报真实主题。若这里
+        // 退回系统主题，在「系统浅色 + 应用深色」的手机上（小米 15 Pro 实测）会给
+        // 深色页面配深色状态栏图标——时间、信号、电量直接看不见；小米 10 Pro 因
+        // 系统正好是深色而表现正常。这就是两台几乎同款机器表现不同的原因。
+        boolean light = configured != null ? configured : false;
         int background = light ? UI_BACKGROUND_LIGHT : UI_BACKGROUND_DARK;
         if (Build.VERSION.SDK_INT >= 30) {
             WindowInsetsController controller = getWindow().getInsetsController();
@@ -688,6 +802,9 @@ public final class MainActivity extends Activity {
                         return errorResponse(403, "Forbidden");
                     }
                 }
+                // 不要在这里把镜像页的主框架替换成 APK 内置的 index.html。
+                // 实测会白屏（真机 READY=false）：内置界面依赖的启动前置条件
+                // 与 Worker 托管的页面不同。镜像页保持原样加载。
                 return null;
             }
 
@@ -713,9 +830,18 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView source, String url) {
                 if (source != webView) return;
                 rememberPage(url);
-                // 曾在此处对镜像页注入「放开供应商导航列」的样式，实际把图标列
-                // 压到了详情内容上（该构建窄屏下另有自己的选择器布局）。
-                // 看不到注入目标页面的真实结构就不该凭空覆盖布局，已移除。
+                // 镜像页窄屏下让供应商列表可切换。
+                //
+                // 那份部署构建把导航列包在容器查询里，要求宽度 ≥768px；手机只有
+                // 392px，整列被隐藏，只剩当前一个供应商。
+                //
+                // 只放开 display 会压出重叠（上一版的错）：那次用的是本机版的
+                // data-model-provider-split-panel，而该构建里根本没有这个属性
+                // （grep 命中 0 次），于是只有 display 生效、栅格没分列，图标列就
+                // 压在详情区上。这次对准该构建里真实存在的两个类：导航列
+                // `provider-settings:block` 与栅格 `provider-settings:grid-cols-[...]`，
+                // 同时补上列宽，可见性与不重叠一起满足。
+                if (mirrorSessionHost != null) injectMirrorNarrowLayoutFix(source);
                 // 冷启动时先到的授权回调在这里补发一次。
                 deliverOAuthCallback();
             }

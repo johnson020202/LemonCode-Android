@@ -88,7 +88,12 @@ final class LocalBridgePolicy {
         if (!isMainFrame || origin == null || !isSupportedCommand(command)) return false;
         if (isLocalSource(origin, sourceOrigin)) return origin.allows(pageUrl);
         if (isMirrorSource(sourceOrigin, mirrorHost) && isMirrorPage(pageUrl, mirrorHost)) {
-            return "notify".equals(command);
+            // theme 也必须放行：远程控制页同样是深色界面，若它不能上报主题，
+            // 原生只能退回系统 uiMode。系统浅色 + 页面深色时会给深色背景配深色
+            // 图标，状态栏上的时间/信号/电量就“消失”了（小米 15 Pro 上复现，
+            // 小米 10 Pro 因系统是深色而正常）。theme 只影响系统栏明暗，不放宽任何
+            // 原生能力面。
+            return "notify".equals(command) || "theme".equals(command);
         }
         return false;
     }
