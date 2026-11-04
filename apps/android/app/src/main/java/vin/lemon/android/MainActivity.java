@@ -373,36 +373,6 @@ public final class MainActivity extends Activity {
                         })));
     }
 
-    /**
-     * 镜像页窄屏布局修正。
-     *
-     * <p>远程构建把供应商导航列包在容器查询
-     * `hidden @min-[48rem]/provider-settings:block` 里：容器宽度需 ≥768px 才显示，
-     * 而手机视口只有 392px（或更窄），该列被永久隐藏，页面上只剩当前选中的
-     * 供应商，无法切换。「小米超级岛」之外的另一个同类问题是这处。
-     *
-     * <p>这里放开该列并压成 56px 图标条，与本机版窄屏形态一致；只作用于镜像页，
-     * 且用幂等标记避免重复注入。
-     */
-    private void injectMirrorLayoutFix(WebView view) {
-        String script = "(function(){"
-                + "if(document.getElementById('lcode-mirror-layout-fix'))return;"
-                + "var s=document.createElement('style');"
-                + "s.id='lcode-mirror-layout-fix';"
-                + "s.textContent='@media (max-width:767px){"
-                + "[class*=\"provider-settings:block\"]{display:block!important}"
-                // 恢复导航列占位并按图标条排布
-                + "[data-model-provider-split-panel]{grid-template-columns:56px minmax(0,1fr)!important}"
-                + "}';"
-                + "document.head.appendChild(s);"
-                + "})();";
-        try {
-            view.evaluateJavascript(script, null);
-        } catch (RuntimeException ignored) {
-            // 页面正在销毁：忽略即可，下次 onPageFinished 会重新注入。
-        }
-    }
-
     private java.io.File agentLogFile() {
         java.io.File dir = new java.io.File(getFilesDir(), "home/.lcode/cli/log");
         java.io.File[] files = dir.listFiles((d, name) -> name.endsWith(".jsonl"));
@@ -718,11 +688,9 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView source, String url) {
                 if (source != webView) return;
                 rememberPage(url);
-                // 镜像页（远程控制）来自远程构建，窄屏下供应商导航整列被
-                // `hidden @min-[48rem]/provider-settings:block` 隐藏，手机永远达不到
-                // 768px，导致「只能看到当前这一个供应商」。这里注入样式放开该列，
-                // 让它按 56px 图标条渲染（本机版就是这种形态）。
-                if (mirrorSessionHost != null) injectMirrorLayoutFix(source);
+                // 曾在此处对镜像页注入「放开供应商导航列」的样式，实际把图标列
+                // 压到了详情内容上（该构建窄屏下另有自己的选择器布局）。
+                // 看不到注入目标页面的真实结构就不该凭空覆盖布局，已移除。
                 // 冷启动时先到的授权回调在这里补发一次。
                 deliverOAuthCallback();
             }
