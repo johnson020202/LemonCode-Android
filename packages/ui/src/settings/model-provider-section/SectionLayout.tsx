@@ -64,9 +64,14 @@ export function ModelProviderSectionLayout({
         />
       </div>
 
-      <div className="overflow-clip rounded-xl border border-border bg-card">
+      {/*
+        窄屏必须让面板按内容自然展开、由外层页面滚动。
+        原先固定 min-h-[36rem] + overflow-clip：手机详情列内容远高于容器，
+        底部已配置模型被裁掉且滚不到，表现就是「只看到前几个模型」。
+      */}
+      <div className="rounded-xl border border-border bg-card md:overflow-clip">
         <div
-          className="grid min-h-[36rem] grid-cols-[56px_minmax(0,1fr)] gap-0 md:grid-cols-[224px_minmax(0,1fr)]"
+          className="grid min-h-0 grid-cols-[56px_minmax(0,1fr)] gap-0 md:min-h-[36rem] md:grid-cols-[224px_minmax(0,1fr)]"
           data-model-provider-split-panel="true"
         >
           <div

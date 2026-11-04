@@ -145,8 +145,10 @@ export function ProviderModelMetadataDialog({
         </DialogTrigger>
       ) : null}
       <DialogContent
-        // overflow-hidden 仍允许聚焦触发外层滚动；语言换行后曾滚走标题。仅正文滚动，外框只裁切。
-        className="max-h-[min(48rem,calc(100vh-4rem))] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-clip"
+        // 手机竖屏时 100vh 会把弹窗压得比内容矮；再叠加 overflow-clip 就变成
+        // 「内容被裁掉且不能滚」，用户看不到已配置的模型。改用 dvh，外框只裁切、
+        // 正文区独立滚动（不改变桌面端既有的「仅正文滚动」语义）。
+        className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-hidden"
         data-no-model-drag="true"
         data-testid={contentTestId}
       >
