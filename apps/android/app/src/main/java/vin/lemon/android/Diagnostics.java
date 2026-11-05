@@ -103,12 +103,41 @@ final class Diagnostics {
         }, callback);
     }
 
+    static void sendTelegram(Activity activity, String botToken, String chatId,
+                             File runtimeLog, File agentLog, Callback callback) {
+        run(activity, () -> {
+            if (botToken == null || botToken.trim().isEmpty() || chatId == null || chatId.trim().isEmpty()) {
+                throw new IOException("请先填写 Bot Token 与 Chat ID");
+            }
+            String payload = collect(runtimeLog, agentLog);
+            String url = "https://api.telegram.org/bot" + botToken.trim() + "/sendDocument";
+            String body = multipart(chatId.trim(), payload);
+            String response = post(url, body, "multipart/form-data; boundary=" + BOUNDARY);
+            if (!response.contains("\"ok\":true")) {
+                throw new IOException("Telegram 返回失败：" + truncate(response, 160));
+            }
+            return "已发送到 Telegram";
+        }, callback);
+    }
+
     /** 通过用户自建 HTTP 端点发送（POST，正文为压缩后的文本）。 */
     static void sendHttp(Activity activity, String endpoint, String payload, Callback callback) {
         run(activity, () -> {
             if (endpoint == null || !endpoint.startsWith("https://")) {
                 throw new IOException("端点必须是 https:// 地址");
             }
+            byte[] compressed = gzip(payload.getBytes(StandardCharsets.UTF_8));
+            String response = postBytes(endpoint.trim(), compressed, "application/gzip");
+            return "已发送（HTTP " + response + "）";
+        }, callback);
+    }
+
+    static void sendHttp(Activity activity, String endpoint, File runtimeLog, File agentLog, Callback callback) {
+        run(activity, () -> {
+            if (endpoint == null || !endpoint.startsWith("https://")) {
+                throw new IOException("端点必须是 https:// 地址");
+            }
+            String payload = collect(runtimeLog, agentLog);
             byte[] compressed = gzip(payload.getBytes(StandardCharsets.UTF_8));
             String response = postBytes(endpoint.trim(), compressed, "application/gzip");
             return "已发送（HTTP " + response + "）";
@@ -171,15 +200,6 @@ final class Diagnostics {
                             .setView(layout)
                             .setNegativeButton("取消", null)
                             .setPositiveButton("上报", (d2, w2) -> {
-                                String payload;
-                                try {
-                                    payload = collect(runtimeLog, agentLog);
-                                } catch (IOException exception) {
-                                    android.widget.Toast.makeText(activity,
-                                            "读取日志失败：" + exception.getMessage(),
-                                            android.widget.Toast.LENGTH_LONG).show();
-                                    return;
-                                }
                                 Callback callback = new Callback() {
                                     @Override public void onStatus(String message) {}
 
@@ -201,9 +221,9 @@ final class Diagnostics {
                                 };
                                 if (which == 0) {
                                     sendTelegram(activity, tokenInput.getText().toString(),
-                                            chatInput.getText().toString(), payload, callback);
+                                            chatInput.getText().toString(), runtimeLog, agentLog, callback);
                                 } else {
-                                    sendHttp(activity, tokenInput.getText().toString(), payload, callback);
+                                    sendHttp(activity, tokenInput.getText().toString(), runtimeLog, agentLog, callback);
                                 }
                             })
                             .show();

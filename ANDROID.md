@@ -4,7 +4,7 @@ LemonCode 的 Android 客户端：**独立运行**为主，APK 内含 Node 运�
 
 ## 下载
 
-**最新版本：** [Releases](https://github.com/johnson020202/LemonCode-Android/releases) → `LemonCode-android-0.1.0-arm64.apk`
+**最新版本：** [Releases](https://github.com/johnson020202/LemonCode-Android/releases) → `LemonCode-android-*-arm64.apk`（当前版本 3.17.28）
 
 - 仅 arm64（几乎所有现代安卓手机），Android 8.0 及以上。
 - 用固定密钥签名，后续版本可直接覆盖升级；卸载会清除本机会话数据。
@@ -20,9 +20,9 @@ LemonCode 的 Android 客户端：**独立运行**为主，APK 内含 Node 运�
 
 独立运行时所有执行都发生在手机本地；远程控制走 Cloudflare Workers 隧道（默认 `https://code.lemon.vin`），配对凭据只出现在二维码 fragment；会话同步只在局域网发生。应用本机只监听 `127.0.0.1`，不开放局域网端口。
 
-## 0.1 版本能力与缺口
+## 版本能力与支持
 
-已实现：本机运行时、Agent 会话、终端、文件读写、Git、MCP/插件配置、共享 UI、SAF 文件上传、扫码远程控制与会话同步（协议与上游 v3.17.4 对齐，真机链路待回归）、应用内检查更新。
+已实现：本机运行时、Agent 会话、终端、文件读写、Git、MCP/插件配置、共享 UI、SAF 文件上传、扫码远程控制（MIRROR 端到端验证通过）、会话同步（COPY 端到端验证通过）、Xiaomi 焦点通知 / Android 16 Live Updates 任务进度、应用内检查更新。
 
 **未实现**（不伪装为可用）：
 - 文件下载与保存

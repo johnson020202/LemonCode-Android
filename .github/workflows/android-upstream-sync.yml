@@ -2,7 +2,8 @@ name: Sync upstream for Android preview
 
 on:
   schedule:
-    - cron: "17,47 * * * *"
+    # 上游主干处于稳定维护期，调整为每 6 小时巡检一次，避免每 30 分钟轮询徒耗 Actions 配额
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
