@@ -11,6 +11,34 @@ if (nameText.trim().isEmpty() || nameText.length() > 100 || nameText.toCharArray
     throw new GradleException('ANDROID_VERSION_NAME must be a nonempty printable version (max 100 characters)')
 }
 
+// 共存构建：默认使用独立 applicationId（vin.lemon.android.plus），
+// 与原版 vin.lemon.android 同时安装、同时运行时拥有独立数据目录、回环端口、Provider 与深链。
+// 亦可通过 ANDROID_APPLICATION_ID / -PapplicationId 显式覆盖回原版包名或自定义包名。
+String appIdText = (project.findProperty('applicationId')
+        ?: providers.environmentVariable('ANDROID_APPLICATION_ID').orNull
+        ?: 'vin.lemon.android.plus').toString().trim()
+if (!(appIdText ==~ /[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+/)) {
+    throw new GradleException("Invalid ANDROID_APPLICATION_ID: ${appIdText}")
+}
+boolean isOriginalPackage = (appIdText == 'vin.lemon.android')
+int defaultServerPort = isOriginalPackage ? 31234
+        : ('vin.lemon.android.plus' == appIdText ? 31235 : 32000 + Math.abs(appIdText.hashCode() % 7000))
+String portText = providers.environmentVariable('ANDROID_SERVER_PORT')
+        .getOrElse(String.valueOf(defaultServerPort)).trim()
+if (!(portText ==~ /[1-9][0-9]{3,4}/) || portText.toInteger() < 1024 || portText.toInteger() > 65535) {
+    throw new GradleException("ANDROID_SERVER_PORT must be a TCP port from 1024 to 65535")
+}
+String oauthSchemeText = providers.environmentVariable('ANDROID_OAUTH_SCHEME')
+        .getOrElse(isOriginalPackage ? 'lcode' : 'lcodeplus').trim().toLowerCase(Locale.ROOT)
+if (!(oauthSchemeText ==~ /[a-z][a-z0-9+.-]{1,31}/)) {
+    throw new GradleException("Invalid ANDROID_OAUTH_SCHEME: ${oauthSchemeText}")
+}
+String updateAssetSuffix = providers.environmentVariable('ANDROID_UPDATE_ASSET_SUFFIX')
+        .getOrElse(isOriginalPackage ? '-arm64.apk' : '-plus-arm64.apk').trim()
+String launcherLabel = isOriginalPackage ? 'LemonCode' : 'LemonCode Plus'
+String debugLauncherLabel = isOriginalPackage ? 'LemonCode Android (debug)' : 'LemonCode Plus (debug)'
+String homeTitleText = isOriginalPackage ? 'LemonCode Android' : 'LemonCode Plus'
+
 def signingEnv = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
         .collectEntries { key -> [(key): providers.environmentVariable(key).orNull] }
 boolean signingComplete = signingEnv.values().every { it != null && !it.trim().isEmpty() }
@@ -22,12 +50,17 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'vin.lemon.android'
+        applicationId appIdText
         minSdk 26
         targetSdk 35
         versionCode codeText.toInteger()
         versionName nameText
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        manifestPlaceholders = [oauthScheme: oauthSchemeText]
+        buildConfigField 'int', 'PREFERRED_SERVER_PORT', portText
+        buildConfigField 'String', 'OAUTH_SCHEME', "\"${oauthSchemeText}\""
+        buildConfigField 'String', 'UPDATE_ASSET_SUFFIX', "\"${updateAssetSuffix}\""
+        resValue 'string', 'preview_title', homeTitleText
     }
 
     buildFeatures {
@@ -55,10 +88,10 @@ android {
     }
     buildTypes {
         debug {
-            resValue 'string', 'app_name', 'LemonCode Android (debug)'
+            resValue 'string', 'app_name', debugLauncherLabel
         }
         release {
-            resValue 'string', 'app_name', 'LemonCode'
+            resValue 'string', 'app_name', launcherLabel
             debuggable false
             minifyEnabled false
             if (signingReady) {

@@ -5,6 +5,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 
 /**
  * 最小 tar 解包器：只支持 APK 自产数据包使用的 ustar/GNU 格式（普通文件、目录、
@@ -13,11 +15,17 @@ import java.nio.charset.StandardCharsets;
 final class TarExtractor {
     private static final int BLOCK = 512;
     private static final int MAX_META = 64 * 1024;
+    private static final int IO_BUFFER_SIZE = 64 * 1024;
 
     private TarExtractor() {}
 
     static void extract(InputStream input, File destination) throws IOException {
+        // 优化首次解包性能：在 extract 入口只解析一次根目录 canonical 路径，并复用单个 64KB 传输缓冲区，
+        // 避免对 runtime-payload.tar 内数千个文件重复发起数千次 realpath 系统调用与数千次 64KB 数组分配。
+        File canonicalBase = destination.getCanonicalFile();
+        String basePrefix = canonicalBase.getPath() + File.separator;
         byte[] header = new byte[BLOCK];
+        byte[] ioBuffer = new byte[IO_BUFFER_SIZE];
         String pendingName = null;
         String pendingLink = null;
         while (readBlock(input, header)) {
@@ -30,7 +38,7 @@ final class TarExtractor {
             if (!prefix.isEmpty() && !name.startsWith("/")) name = prefix + "/" + name;
             if (type == 'L' || type == 'K') {
                 String value = readText(input, size);
-                skipPadding(input, size);
+                skipPadding(input, size, ioBuffer);
                 if (type == 'L') pendingName = value;
                 else pendingLink = value;
                 continue;
@@ -43,22 +51,23 @@ final class TarExtractor {
                 linkName = pendingLink;
                 pendingLink = null;
             }
-            handleEntry(input, destination, name, type, linkName, size);
-            skipPadding(input, size);
+            handleEntry(input, canonicalBase, basePrefix, name, type, linkName, size, ioBuffer);
+            skipPadding(input, size, ioBuffer);
         }
     }
 
     private static void handleEntry(
-            InputStream input, File destination, String rawName, int type, String linkName, long size)
+            InputStream input, File canonicalBase, String basePrefix, String rawName,
+            int type, String linkName, long size, byte[] ioBuffer)
             throws IOException {
         String name = rawName.startsWith("./") ? rawName.substring(2) : rawName;
         if (name.isEmpty() || name.equals(".")) {
-            skip(input, size);
+            skip(input, size, ioBuffer);
             return;
         }
-        File target = resolveInside(destination, name);
+        File target = resolveInside(canonicalBase, basePrefix, name);
         if (type == '5') {
-            skip(input, size);
+            skip(input, size, ioBuffer);
             if (!target.isDirectory() && !target.mkdirs()) {
                 throw new IOException("Cannot create runtime directory");
             }
@@ -69,47 +78,59 @@ final class TarExtractor {
             throw new IOException("Cannot create runtime directory");
         }
         if (type == '2') {
-            skip(input, size);
-            File linkTarget = resolveInside(destination, linkName);
-            if (target.exists() && !target.delete()) throw new IOException("Cannot replace runtime link");
-            try {
-                android.system.Os.symlink(linkTarget.getAbsolutePath(), target.getAbsolutePath());
-            } catch (Exception exception) {
-                throw new IOException("Cannot create runtime symlink", exception);
+            skip(input, size, ioBuffer);
+            File linkTarget = resolveInside(canonicalBase, basePrefix, linkName);
+            // 修复断链覆盖失败：File.exists() 会跟随符号链接，若旧符号链接是悬空断链（目标尚未解包），
+            // exists() 返回 false 不删除，随后创建新链接会抛 EEXIST。改用 NOFOLLOW_LINKS 判定并删除。
+            if (Files.exists(target.toPath(), LinkOption.NOFOLLOW_LINKS)
+                    && !Files.deleteIfExists(target.toPath())) {
+                throw new IOException("Cannot replace runtime link");
             }
+            createSymbolicLink(linkTarget, target);
             return;
         }
         if (type == 0 || type == '0' || type == '7') {
             try (FileOutputStream output = new FileOutputStream(target)) {
-                copy(input, output, size);
+                copy(input, output, size, ioBuffer);
             }
             return;
         }
         // 其他类型（字符设备、归档扩展头等）不属于本包内容，直接跳过。
-        skip(input, size);
+        skip(input, size, ioBuffer);
     }
 
-    private static File resolveInside(File destination, String name) throws IOException {
-        if (name.isEmpty() || name.startsWith("/") || name.indexOf('\\') >= 0) {
+    private static void createSymbolicLink(File linkTarget, File linkFile) throws IOException {
+        try {
+            Files.createSymbolicLink(linkFile.toPath(), linkTarget.toPath());
+        } catch (UnsupportedOperationException | SecurityException fallback) {
+            try {
+                android.system.Os.symlink(linkTarget.getAbsolutePath(), linkFile.getAbsolutePath());
+            } catch (Exception exception) {
+                throw new IOException("Cannot create runtime symlink", exception);
+            }
+        }
+    }
+
+    static File resolveInside(File canonicalBase, String basePrefix, String name) throws IOException {
+        if (name == null || name.isEmpty() || name.startsWith("/") || name.indexOf('\\') >= 0) {
             throw new IOException("Unsafe archive path");
         }
-        File base = destination.getCanonicalFile();
-        File target = new File(base, name).getCanonicalFile();
-        if (!target.equals(base) && !target.getPath().startsWith(base.getPath() + File.separator)) {
+        File target = new File(canonicalBase, name).getCanonicalFile();
+        if (!target.equals(canonicalBase) && !target.getPath().startsWith(basePrefix)) {
             throw new IOException("Archive path escapes destination");
         }
         return target;
     }
 
     private static String readText(InputStream input, long size) throws IOException {
-        if (size > MAX_META) throw new IOException("Archive metadata entry too large");
+        if (size < 0 || size > MAX_META) throw new IOException("Archive metadata entry too large");
         byte[] data = new byte[(int) size];
         readFully(input, data, data.length);
         return new String(data, StandardCharsets.UTF_8).split("\u0000", 2)[0];
     }
 
-    private static void copy(InputStream input, FileOutputStream output, long size) throws IOException {
-        byte[] buffer = new byte[64 * 1024];
+    private static void copy(InputStream input, FileOutputStream output, long size, byte[] buffer)
+            throws IOException {
         long remaining = size;
         while (remaining > 0) {
             int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
@@ -119,9 +140,8 @@ final class TarExtractor {
         }
     }
 
-    private static void skip(InputStream input, long size) throws IOException {
+    private static void skip(InputStream input, long size, byte[] buffer) throws IOException {
         long remaining = size;
-        byte[] buffer = new byte[8192];
         while (remaining > 0) {
             int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
             if (read < 0) throw new IOException("Truncated archive");
@@ -129,9 +149,9 @@ final class TarExtractor {
         }
     }
 
-    private static void skipPadding(InputStream input, long size) throws IOException {
+    private static void skipPadding(InputStream input, long size, byte[] buffer) throws IOException {
         int remainder = (int) (size % BLOCK);
-        if (remainder != 0) skip(input, BLOCK - remainder);
+        if (remainder != 0) skip(input, BLOCK - remainder, buffer);
     }
 
     private static boolean readBlock(InputStream input, byte[] header) throws IOException {

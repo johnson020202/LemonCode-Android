@@ -18,21 +18,29 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 /**
- * 应用内升级：查询本仓库最新 Release，下载 arm64 APK 并校验同发布的 SHA-256，
+ * 应用内升级：查询本仓库最新 Release，下载与当前安装包匹配的 arm64 APK 并校验同发布的 SHA-256，
  * 然后交给系统安装器。
  *
- * <p>Android 不允许应用静默安装自身（需要用户确认，部分系统还要求「安装未知应用」授权），
- * 因此这里只负责检查、下载与校验；最后一步由系统安装界面完成，并明确告知用户。
- * 校验值缺失或不匹配时拒绝安装，避免把半截文件交给安装器。
+ * <p>共存隔离策略：共存包（{@code vin.lemon.android.plus}）只匹配专属后缀
+ * {@code -plus-arm64.apk} 与 {@code -plus-arm64.apk.sha256}，绝不回退下载原版
+ * {@code -arm64.apk}——否则系统安装器会尝试覆盖安装原版应用或报签名冲突，污染原版软件。
  */
 final class Updater {
     private static final String RELEASES_API =
             "https://api.github.com/repos/johnson020202/LemonCode-Android/releases/latest";
-    private static final String APK_SUFFIX = "-arm64.apk";
-    private static final String SHA_SUFFIX = "-arm64.apk.sha256";
+    static final String APK_SUFFIX = BuildConfig.UPDATE_ASSET_SUFFIX;
+    static final String SHA_SUFFIX = APK_SUFFIX + ".sha256";
     private static final long MAX_APK_BYTES = 400L * 1024 * 1024;
+    private static final Pattern SHA256_HEX = Pattern.compile("[a-fA-F0-9]{64}");
+    private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+
+    /** 防止连点或前后台切换并发拉起多个检查/下载线程。 */
+    private static final AtomicBoolean CHECK_IN_FLIGHT = new AtomicBoolean(false);
+    private static final AtomicBoolean DOWNLOAD_IN_FLIGHT = new AtomicBoolean(false);
 
     private Updater() {}
 
@@ -66,8 +74,15 @@ final class Updater {
         return BuildConfig.VERSION_NAME;
     }
 
-    /** 解析 GitHub release JSON；没有 arm64 APK 或校验文件时返回 null。 */
+    /** 解析 GitHub release JSON；没有匹配当前包变体的 APK 或校验文件时返回 null。 */
     static Release parseLatestRelease(String json) throws IOException {
+        return parseLatestRelease(json, APK_SUFFIX);
+    }
+
+    static Release parseLatestRelease(String json, String apkSuffix) throws IOException {
+        if (apkSuffix == null || !apkSuffix.endsWith(".apk")) return null;
+        String shaSuffix = apkSuffix + ".sha256";
+        boolean wantsPlusVariant = apkSuffix.contains("-plus-");
         JSONObject root;
         try {
             root = new JSONObject(json);
@@ -84,8 +99,10 @@ final class Updater {
             if (asset == null) continue;
             String name = asset.optString("name", "");
             String url = asset.optString("browser_download_url", "");
-            if (name.endsWith(APK_SUFFIX)) apkUrl = url;
-            else if (name.endsWith(SHA_SUFFIX)) shaUrl = url;
+            // 原版（-arm64.apk）与共存版（-plus-arm64.apk）双向严格区分，互不串包。
+            if (!wantsPlusVariant && name.contains("-plus-")) continue;
+            if (name.endsWith(apkSuffix)) apkUrl = url;
+            else if (name.endsWith(shaSuffix)) shaUrl = url;
         }
         // 没有校验文件就不提供热更新：无法验证的安装包不应被安装。
         if (apkUrl == null || shaUrl == null) return null;
@@ -109,31 +126,41 @@ final class Updater {
     }
 
     static void check(Activity activity, Callback callback) {
+        if (!CHECK_IN_FLIGHT.compareAndSet(false, true)) return;
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
                 connection = open(RELEASES_API, "application/vnd.github+json");
                 final int statusCode = connection.getResponseCode();
                 if (statusCode != 200) {
-                    post(activity, () -> callback.onError("无法获取更新信息（HTTP " + statusCode + "）"));
+                    String hint = statusCode == 403 ? "（GitHub API 访问受限，请稍后再试）" : "";
+                    post(activity, () -> callback.onError("无法获取更新信息（HTTP " + statusCode + "）" + hint));
                     return;
                 }
                 String body = readText(connection);
                 Release release = parseLatestRelease(body);
                 if (release == null) {
-                    post(activity, () -> callback.onError("发布中没有可用的 arm64 安装包或校验文件"));
+                    String missingMsg = !"vin.lemon.android".equals(BuildConfig.APPLICATION_ID)
+                            ? "当前 Release 暂未附带共存版安装包（" + APK_SUFFIX + "），不会覆盖原版应用"
+                            : "发布中没有可用的 arm64 安装包或校验文件";
+                    post(activity, () -> callback.onError(missingMsg));
                     return;
                 }
                 post(activity, () -> callback.onChecked(release));
             } catch (IOException exception) {
                 post(activity, () -> callback.onError("检查更新失败：" + message(exception)));
             } finally {
+                CHECK_IN_FLIGHT.set(false);
                 if (connection != null) connection.disconnect();
             }
         }, "lcode-update-check").start();
     }
 
     static void download(Activity activity, Release release, Callback callback) {
+        if (!DOWNLOAD_IN_FLIGHT.compareAndSet(false, true)) {
+            post(activity, () -> callback.onStatus("更新正在下载中…"));
+            return;
+        }
         new Thread(() -> {
             File target = new File(activity.getCacheDir(), "update" + APK_SUFFIX);
             File partial = new File(activity.getCacheDir(), "update" + APK_SUFFIX + ".part");
@@ -143,9 +170,20 @@ final class Updater {
                     post(activity, () -> callback.onError("更新地址不在允许的发布域名内"));
                     return;
                 }
+                post(activity, () -> callback.onStatus("正在校验发布摘要…"));
+                // 先拉取极小的 SHA-256 文件，再打开大体积 APK 连接，避免 APK 流在等待校验文件期间空闲超时。
+                String expected = fetchExpectedSha(release.shaUrl);
+                if (expected == null) {
+                    post(activity, () -> callback.onError("下载校验文件失败"));
+                    return;
+                }
                 post(activity, () -> callback.onStatus("正在下载更新…"));
                 connection = open(release.apkUrl, null);
                 final int downloadCode = connection.getResponseCode();
+                if (!isTrustedReleaseUrl(connection.getURL().toString())) {
+                    post(activity, () -> callback.onError("重定向后的更新地址不在受信任域名内"));
+                    return;
+                }
                 if (downloadCode != 200) {
                     post(activity, () -> callback.onError("下载失败（HTTP " + downloadCode + "）"));
                     return;
@@ -155,30 +193,31 @@ final class Updater {
                     post(activity, () -> callback.onError("更新包超出大小限制"));
                     return;
                 }
-                String expected = fetchExpectedSha(release.shaUrl);
-                if (expected == null) {
-                    post(activity, () -> callback.onError("下载校验文件失败"));
-                    return;
-                }
                 String actual;
-                try (InputStream input = new BufferedInputStream(connection.getInputStream());
+                try (InputStream input = new BufferedInputStream(connection.getInputStream(), 128 * 1024);
                      FileOutputStream output = new FileOutputStream(partial)) {
                     MessageDigest digest = MessageDigest.getInstance("SHA-256");
                     byte[] buffer = new byte[128 * 1024];
                     long written = 0;
+                    int lastPercent = -1;
                     int read;
                     while ((read = input.read(buffer)) != -1) {
                         output.write(buffer, 0, read);
                         digest.update(buffer, 0, read);
                         written += read;
                         if (written > MAX_APK_BYTES) {
+                            partial.delete();
                             post(activity, () -> callback.onError("更新包超出大小限制"));
                             return;
                         }
-                        final long progress = written;
                         if (total > 0) {
-                            post(activity, () -> callback.onStatus("正在下载更新… "
-                                    + (progress * 100 / total) + "%"));
+                            int percent = (int) (written * 100L / total);
+                            // 仅在整数百分比变化时投递 UI 更新，消除数千次主线程消息风暴与重排卡顿。
+                            if (percent != lastPercent) {
+                                lastPercent = percent;
+                                final int shownPercent = percent;
+                                post(activity, () -> callback.onStatus("正在下载更新… " + shownPercent + "%"));
+                            }
                         }
                     }
                     actual = hex(digest.digest());
@@ -201,6 +240,7 @@ final class Updater {
                 partial.delete();
                 post(activity, () -> callback.onError("下载更新失败：" + message(exception)));
             } finally {
+                DOWNLOAD_IN_FLIGHT.set(false);
                 if (connection != null) connection.disconnect();
             }
         }, "lcode-update-download").start();
@@ -213,7 +253,7 @@ final class Updater {
             String trimmed = line.trim();
             if (trimmed.isEmpty()) continue;
             String candidate = trimmed.split("\\s+")[0];
-            if (candidate.matches("[a-fA-F0-9]{64}")) return candidate.toLowerCase(Locale.ROOT);
+            if (SHA256_HEX.matcher(candidate).matches()) return candidate.toLowerCase(Locale.ROOT);
         }
         return null;
     }
@@ -222,6 +262,7 @@ final class Updater {
         HttpURLConnection connection = open(url, null);
         try {
             if (connection.getResponseCode() != 200) return null;
+            if (!isTrustedReleaseUrl(connection.getURL().toString())) return null;
             return parseShaFile(readText(connection));
         } finally {
             connection.disconnect();
@@ -255,8 +296,7 @@ final class Updater {
                     .show();
             return;
         }
-        // Android 7+ 用 file:// 启动安装器会被拒绝（模拟器上 resolve-activity 直接找不到），
-        // 必须经 FileProvider 以 content:// 授权单文件读取。
+        // Android 7+ 用 file:// 启动安装器会被拒绝，必须经 FileProvider 以 content:// 授权单文件读取。
         Uri uri;
         try {
             uri = androidx.core.content.FileProvider.getUriForFile(
@@ -281,7 +321,7 @@ final class Updater {
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(30000);
         connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "LemonCode-Android");
+        connection.setRequestProperty("User-Agent", "LemonCode-Android/" + BuildConfig.VERSION_NAME);
         if (accept != null) connection.setRequestProperty("Accept", accept);
         return connection;
     }
@@ -301,10 +341,14 @@ final class Updater {
         }
     }
 
-    private static String hex(byte[] bytes) {
-        StringBuilder builder = new StringBuilder(bytes.length * 2);
-        for (byte value : bytes) builder.append(String.format(Locale.ROOT, "%02x", value));
-        return builder.toString();
+    static String hex(byte[] bytes) {
+        char[] out = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int v = bytes[i] & 0xff;
+            out[i * 2] = HEX_DIGITS[v >>> 4];
+            out[i * 2 + 1] = HEX_DIGITS[v & 0x0f];
+        }
+        return new String(out);
     }
 
     private static String message(Throwable throwable) {

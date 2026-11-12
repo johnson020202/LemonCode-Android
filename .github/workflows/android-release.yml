@@ -123,11 +123,11 @@ jobs:
           test -x "$apksigner_bin"
           "$apksigner_bin" verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
           ! grep -qi "CN=Android Debug" "$RUNNER_TEMP/certs.txt"
-          cp "$apk" "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk"
-          sha256sum "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk" > "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk.sha256"
+          cp "$apk" "LemonCode-android-${{ steps.v.outputs.name }}-plus-arm64.apk"
+          sha256sum "LemonCode-android-${{ steps.v.outputs.name }}-plus-arm64.apk" > "LemonCode-android-${{ steps.v.outputs.name }}-plus-arm64.apk.sha256"
       - uses: actions/upload-artifact@v7
         with:
-          name: LemonCode-android-${{ steps.v.outputs.name }}
+          name: LemonCode-android-${{ steps.v.outputs.name }}-plus
           if-no-files-found: error
           retention-days: 90
           path: |
@@ -140,8 +140,8 @@ jobs:
         run: |
           tag="android-v${{ steps.v.outputs.name }}"
           gh release create "$tag" \
-            "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk" \
-            "LemonCode-android-${{ steps.v.outputs.name }}-arm64.apk.sha256" \
+            "LemonCode-android-${{ steps.v.outputs.name }}-plus-arm64.apk" \
+            "LemonCode-android-${{ steps.v.outputs.name }}-plus-arm64.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "LemonCode Android ${{ steps.v.outputs.name }}" \
-            --notes "独立运行版：APK 内置 Node 运行时、本地服务端、Agent 与共享界面，不依赖电脑。仅支持 arm64（Android 8.0+）。文件下载、内嵌浏览器、Computer Use 尚未实现。"
+            --title "LemonCode Android Plus ${{ steps.v.outputs.name }}" \
+            --notes "共存优化版（vin.lemon.android.plus）：可与原版 LemonCode 同时安装并独立运行。APK 内置 Node 运行时、本地服务端、Agent 与共享界面，不依赖电脑。仅支持 arm64（Android 8.0+）。"

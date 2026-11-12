@@ -50,6 +50,21 @@ public final class DeviceSyncClientTest {
         }
     }
 
+    @Test public void rejectsMalformedOrNonObjectSnapshotBeforeNetworkCall() {
+        try {
+            DeviceSyncClient.importSnapshot(31235, "{broken-json");
+            fail("Expected INVALID_RESPONSE for malformed JSON");
+        } catch (CopyClient.SyncException expected) {
+            assertEquals(CopyClient.Failure.INVALID_RESPONSE, expected.failure());
+        }
+        try {
+            DeviceSyncClient.importSnapshot(31235, "[1,2,3]");
+            fail("Expected INVALID_RESPONSE for JSON array");
+        } catch (CopyClient.SyncException expected) {
+            assertEquals(CopyClient.Failure.INVALID_RESPONSE, expected.failure());
+        }
+    }
+
     private static void assertFailure(CopyClient.Failure expected, int port) {
         try {
             DeviceSyncClient.importSnapshot(port, "{}");

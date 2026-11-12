@@ -7,8 +7,6 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.res.Configuration;
-import android.graphics.Insets;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
@@ -16,8 +14,6 @@ import android.os.Bundle;
 import android.os.Message;
 import android.text.InputType;
 import android.view.View;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
@@ -74,10 +70,6 @@ public final class MainActivity extends Activity {
     /** 一次性弹窗 WebView 的回收时限：页面 window.open 后不导航也要释放。 */
     private static final long POPUP_PROBE_MS = 3000L;
     private static final int MAX_UPLOAD_FILES = 32;
-    /** iOS 浅色分组背景（#F2F2F7），与 Web 侧浅色主题基底一致。 */
-    private static final int UI_BACKGROUND_LIGHT = 0xFFF2F2F7;
-    /** iOS 深色背景（纯黑），与 .theme-zai-dark 的 --color-background 一致。 */
-    private static final int UI_BACKGROUND_DARK = 0xFF000000;
 
     private SharedPreferences preferences;
     private View homePanel;
@@ -108,8 +100,6 @@ public final class MainActivity extends Activity {
     /** 最近一次已注入页面的回调；用于丢弃同一页面内的重复投递。 */
     private String deliveredOAuthCallback;
     private int deliveredOAuthGeneration = -1;
-    /** 页面最近一次上报的主题；null 表示尚未收到，退回系统 uiMode。 */
-    private Boolean appThemeIsLight;
     /** 页面代际：每次主框架导航自增，用于区分「同一回调在新页面上的合法重投」。 */
     private int pageGeneration;
 
@@ -152,7 +142,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.report_logs).setOnClickListener(view -> Diagnostics.prompt(
                 this,
                 new java.io.File(getFilesDir(), "runtime.log"),
-                agentLogFile()));
+                this::agentLogFile));
         findViewById(R.id.notification_settings)
                 .setOnClickListener(view -> openNotificationSettings());
         startRuntime();
@@ -431,7 +421,7 @@ public final class MainActivity extends Activity {
                 + "var id='lcode-mirror-narrow-fix';"
                 + "var s=document.getElementById(id);"
                 + "if(!s){s=document.createElement('style');s.id=id;(document.head||document.documentElement).appendChild(s);}"
-                + "s.textContent=" + jsString(css) + ";"
+                + "s.textContent=" + org.json.JSONObject.quote(css) + ";"
                 + "return 'ok';"
                 + "})();";
         try {
@@ -439,26 +429,6 @@ public final class MainActivity extends Activity {
         } catch (RuntimeException ignored) {
             // 页面正在销毁：下次 onPageFinished 会重新注入。
         }
-    }
-
-    /** 生成可安全嵌进 JS 字符串字面量的 JSON 形式。 */
-    private static String jsString(String value) {
-        StringBuilder out = new StringBuilder(value.length() + 16);
-        out.append('"');
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            switch (c) {
-                case '"': out.append("\\\""); break;
-                case '\\': out.append("\\\\"); break;
-                case '\n': out.append("\\n"); break;
-                case '\r': out.append("\\r"); break;
-                default:
-                    if (c < 0x20) out.append(String.format("\\u%04x", (int) c));
-                    else out.append(c);
-            }
-        }
-        out.append('"');
-        return out.toString();
     }
 
     private java.io.File agentLogFile() {
@@ -514,6 +484,8 @@ public final class MainActivity extends Activity {
         dirs.add(new java.io.File(getFilesDir(), "home/.lcode/cli/memories"));
         dirs.add(new java.io.File(getFilesDir(), "home/.lcode/cli/memories/projects"));
         StringBuilder builder = new StringBuilder();
+        builder.append("packageName=").append(getPackageName()).append('\n');
+        builder.append("preferredPort=").append(AndroidRuntime.PREFERRED_PORT).append('\n');
         builder.append("androidDataDir=").append(getDataDir().getAbsolutePath()).append('\n');
         builder.append("filesDir=").append(getFilesDir().getAbsolutePath()).append('\n');
         for (java.io.File dir : dirs) {
@@ -1212,13 +1184,26 @@ public final class MainActivity extends Activity {
                     preferences.edit().clear().apply();
                     activeOrigin = null;
                     activePort = 0;
+                    connectButton.setEnabled(false);
+                    scanButton.setEnabled(false);
+                    reconnectButton.setEnabled(false);
                     previousOrigin.setText(R.string.no_previous);
-                    // 运行时的数据目录与解包目录一起清除，避免残留旧会话数据库。
-                    AndroidRuntime.deleteRecursively(new File(getFilesDir(), "data"));
-                    AndroidRuntime.deleteRecursively(new File(getFilesDir(), "runtime"));
-                    AndroidRuntime.deleteRecursively(new File(getFilesDir(), "workspace"));
                     status.setText(R.string.starting_runtime);
-                    startRuntime();
+                    // 修复主线程 ANR 与僵尸服务端残留：先在后台线程终止旧 Node 进程释放 SQLite 与端口，
+                    // 再递归删除数百 MB 运行时/工作区目录，完成后切回主线程重新启动运行时。
+                    final View forgetButton = findViewById(R.id.forget);
+                    forgetButton.setEnabled(false);
+                    new Thread(() -> {
+                        AndroidRuntime.stopServer();
+                        AndroidRuntime.deleteRecursively(new File(getFilesDir(), "data"));
+                        AndroidRuntime.deleteRecursively(new File(getFilesDir(), "runtime"));
+                        AndroidRuntime.deleteRecursively(new File(getFilesDir(), "workspace"));
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            forgetButton.setEnabled(true);
+                            startRuntime();
+                        });
+                    }, "lcode-runtime-reset").start();
                 }));
     }
 

@@ -43,14 +43,30 @@ final class XiaomiFocus {
 
     private static long checkedAt = 0L;
     private static boolean cached = false;
+    /** 缓存 SystemProperties.get 反射句柄与机型判定，消除每次通知进度刷新时的重复反射开销。 */
+    private static final java.lang.reflect.Method SYSTEM_PROP_GET = resolveSystemPropMethod();
+    private static Boolean cachedIsXiaomi;
 
     private XiaomiFocus() {}
 
+    private static java.lang.reflect.Method resolveSystemPropMethod() {
+        try {
+            Class<?> type = Class.forName("android.os.SystemProperties");
+            return type.getMethod("get", String.class, String.class);
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return null;
+        }
+    }
+
     /** 是否小米机型。 */
     static boolean isXiaomi() {
+        Boolean known = cachedIsXiaomi;
+        if (known != null) return known;
         String os = prop("ro.mi.os.version.name", "");
         String miui = prop("ro.miui.ui.version.name", "");
-        return !os.isEmpty() || !miui.isEmpty();
+        boolean result = !os.isEmpty() || !miui.isEmpty();
+        cachedIsXiaomi = result;
+        return result;
     }
 
     /** 系统是否声明支持超级岛。 */
@@ -201,10 +217,9 @@ final class XiaomiFocus {
 
     /** android.os.SystemProperties 是隐藏类，只能反射读取。 */
     private static String prop(String key, String fallback) {
+        if (SYSTEM_PROP_GET == null) return fallback;
         try {
-            Class<?> type = Class.forName("android.os.SystemProperties");
-            Object value = type.getMethod("get", String.class, String.class)
-                    .invoke(null, key, fallback);
+            Object value = SYSTEM_PROP_GET.invoke(null, key, fallback);
             return value == null ? fallback : String.valueOf(value);
         } catch (ReflectiveOperationException | RuntimeException exception) {
             return fallback;

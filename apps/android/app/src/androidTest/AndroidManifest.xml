@@ -3,7 +3,7 @@
     <application>
         <provider
             android:name="vin.lemon.android.GalleryImageProvider"
-            android:authorities="vin.lemon.android.test.gallery"
+            android:authorities="${applicationId}.gallery"
             android:exported="true"
             android:grantUriPermissions="true" />
     </application>

@@ -49,6 +49,15 @@ node scripts/android/build-standalone.mjs
 
 运行时二进制来自 Termux 官方 apt 源，构建期逐包校验 SHA-256。
 
+## 与原版软件双开共存说明
+
+本分支默认产出共存优化包 `LemonCode Plus`（`applicationId = vin.lemon.android.plus`），可与原版 `LemonCode`（`vin.lemon.android`）在同一台手机上**同时安装、同时运行**且互不干扰：
+
+- **独立安装与存储**：独立包名、桌面图标名称（`LemonCode Plus`）与私有数据目录，无需卸载原版，也不会触发签名冲突。
+- **独立回环端口与进程所有权**：共存版默认监听 `127.0.0.1:31235`（原版为 `31234`），且严格校验子进程所有权，绝不串连到原版正在运行的本地服务端。
+- **独立 Provider / OAuth / 热更新通道**：`FileProvider`、测试 `GalleryImageProvider`、OAuth 专属 scheme（`lcodeplus://oauth/callback`，同时兼容 `zcode://` 与 `lcode://`）及更新包后缀（`-plus-arm64.apk`）全面隔离。
+- 如需切回原版包名构建，可在构建时传入 `ANDROID_APPLICATION_ID=vin.lemon.android`。
+
 ## 许可
 
 上游 LCode 为 Apache-2.0；本仓库的 Android 适配沿用同一许可。第三方组件见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。

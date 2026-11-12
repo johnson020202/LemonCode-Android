@@ -35,26 +35,38 @@ public final class MirrorKeepAliveService extends Service {
     private static final int NOTIFICATION_ID = 41721;
     /** 比 JS 侧 30s 心跳更密：即使系统吞掉一两拍，仍落在 Worker 的 75s 关闭窗口内。 */
     private static final long TICK_INTERVAL_MS = 20_000L;
+    /** 单次持锁时间上限（4 小时），在活跃心跳期间自动续期，防止异常场景永久锁死 CPU 耗电。 */
+    private static final long WAKELOCK_LEASE_MS = 4L * 60L * 60L * 1000L;
+    /** 连续丢失目标 WebView 的最大容忍拍数（约 2 分钟），超限自动停止空转保活服务。 */
+    private static final int MAX_IDLE_TICKS = 6;
     private static final String PING_SCRIPT =
             "window.__lcodeRemotePingTick&&window.__lcodeRemotePingTick()";
 
     /** 当前镜像页的 WebView；弱引用避免服务拖住已销毁的页面。 */
-    private static WeakReference<WebView> target;
+    private static volatile WeakReference<WebView> target;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private PowerManager.WakeLock wakeLock;
     private boolean ticking;
+    private int idleTicks;
 
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!ticking) return;
-            WebView view = target == null ? null : target.get();
+            WeakReference<WebView> ref = target;
+            WebView view = ref == null ? null : ref.get();
             if (view != null) {
+                idleTicks = 0;
+                ensureWakeLockHeld();
                 try {
                     view.evaluateJavascript(PING_SCRIPT, null);
                 } catch (RuntimeException ignored) {
                     // 页面或渲染进程已销毁：下一拍等重建后自然恢复，不在这里重建 WebView。
                 }
+            } else if (++idleTicks >= MAX_IDLE_TICKS) {
+                // 目标页面已长时间不存在（例如进程重建后未再进入镜像页），主动退出避免后台白挂通知与耗电。
+                stopSelf();
+                return;
             }
             handler.postDelayed(this, TICK_INTERVAL_MS);
         }
@@ -83,14 +95,23 @@ public final class MirrorKeepAliveService extends Service {
         ensureChannel();
         PowerManager power = getSystemService(PowerManager.class);
         if (power != null) {
-            // 屏幕熄灭后 CPU 会休眠，原生心跳拍点随之停摆；持锁才能覆盖整夜的后台连接。
-            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "lcode:mirror-keepalive");
+            // 按包名隔离 WakeLock 标签，方便原版与共存版在系统电池统计中各自独立归因。
+            wakeLock = power.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK, getPackageName() + ":mirror-keepalive");
             wakeLock.setReferenceCounted(false);
-            wakeLock.acquire();
+            ensureWakeLockHeld();
+        }
+    }
+
+    private void ensureWakeLockHeld() {
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            wakeLock.acquire(WAKELOCK_LEASE_MS);
         }
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        idleTicks = 0;
+        ensureWakeLockHeld();
         Notification notification = buildNotification();
         if (Build.VERSION.SDK_INT >= 34) {
             // connectedDevice：与已配对电脑维持网络连接，属于该类型；dataSync 在 Android 15

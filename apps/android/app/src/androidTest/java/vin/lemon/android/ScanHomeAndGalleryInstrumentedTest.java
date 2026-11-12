@@ -59,7 +59,9 @@ public final class ScanHomeAndGalleryInstrumentedTest {
         MainActivity main = ScanPairingInstrumentedTest.launchMainActivity();
         ScanPairingInstrumentedTest.awaitRuntimeReady(main);
         ScanActivity scanner = ScanPairingInstrumentedTest.launchScanner(main);
-        Uri uri = Uri.parse("content://vin.lemon.android.test.gallery/pairing-qr.png");
+        String testAuthority = InstrumentationRegistry.getInstrumentation()
+                .getContext().getPackageName() + ".gallery";
+        Uri uri = Uri.parse("content://" + testAuthority + "/pairing-qr.png");
         InstrumentationRegistry.getInstrumentation().runOnMainSync(
                 () -> scanner.onActivityResult(42, Activity.RESULT_OK, new Intent().setData(uri)));
         ScanPairingInstrumentedTest.awaitWebViewUrl(main, "code.lemon.vin/p/", 60_000);

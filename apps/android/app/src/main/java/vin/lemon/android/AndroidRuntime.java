@@ -6,9 +6,13 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -24,8 +28,32 @@ final class AndroidRuntime {
     private static final String PAYLOAD = "runtime/runtime-payload.tar";
     private static final String MARKER = ".runtime-digest";
     private static final long START_TIMEOUT_MILLIS = 120_000;
-    /** 固定本机端口：WebView 的 localStorage 按 origin 隔离，端口变化会重置客户端状态。 */
-    static final int PREFERRED_PORT = 31234;
+    private static final Pattern PORT_PATTERN =
+            Pattern.compile("http://127\\.0\\.0\\.1:(\\d{2,5})");
+    private static final Pattern LINK_PATH_PATTERN =
+            Pattern.compile("usr/(bin|lib)/[A-Za-z0-9._+-]+");
+    private static final Pattern SONAME_PATTERN =
+            Pattern.compile("lib[A-Za-z0-9_]+\\.so");
+    private static final Pattern SHA256_PATTERN =
+            Pattern.compile("[a-f0-9]{64}");
+
+    /**
+     * 按安装包隔离的首选回环端口：WebView 的 localStorage 按 origin 隔离，同一应用内保持固定端口
+     * 可延续草稿与主题；同时与原版 vin.lemon.android（31234）错开，避免双开冲突。
+     */
+    static final int PREFERRED_PORT = BuildConfig.PREFERRED_SERVER_PORT;
+
+    /**
+     * 当前进程自启动的 Node 服务端句柄（唯一所有者）。
+     * 修复跨包串连与僵尸进程隐患：
+     * 1) 原实现当首选端口被原版应用占用时，awaitServerQuietly 只检查 /api/server-info 含 serverId，
+     *    会误连到原版应用的服务端，导致两个应用共用原版数据库；现仅允许复用本进程亲自持有的存活子进程。
+     * 2) 原实现未保存 Process 引用，重置本机数据时旧 Node 服务端仍在占用 SQLite 与回环端口；
+     *    现由 stopServer() 统一终止并回收。
+     */
+    private static final Object PROCESS_LOCK = new Object();
+    private static Process activeProcess;
+    private static int activePort;
 
     static final class RuntimeStartException extends Exception {
         RuntimeStartException(String message) {
@@ -38,6 +66,14 @@ final class AndroidRuntime {
     }
 
     private AndroidRuntime() {}
+
+    /** 按 applicationId 选取互不冲突的稳定回环端口（供构建配置与单元测试验证）。 */
+    static int preferredPortForPackage(String packageName) {
+        if ("vin.lemon.android".equals(packageName)) return 31234;
+        if ("vin.lemon.android.plus".equals(packageName)) return 31235;
+        if (packageName == null || packageName.isEmpty()) return 31235;
+        return 32000 + Math.abs(packageName.hashCode() % 7000);
+    }
 
     /** 解包并准备运行时根目录；已准备且摘要一致时只重建链接。 */
     static File prepare(android.content.Context context) throws IOException {
@@ -71,7 +107,7 @@ final class AndroidRuntime {
     private static void extractPayload(android.content.res.AssetManager assets, File root)
             throws IOException {
         try (InputStream raw = assets.open(PAYLOAD);
-             GZIPInputStream gzip = new GZIPInputStream(new BufferedInputStream(raw))) {
+             GZIPInputStream gzip = new GZIPInputStream(new BufferedInputStream(raw, 64 * 1024))) {
             TarExtractor.extract(gzip, root);
         }
     }
@@ -147,7 +183,7 @@ final class AndroidRuntime {
             String path = optionalField(object, "path");
             String soname = optionalField(object, "soname");
             if (path == null || soname == null) continue;
-            if (!path.matches("usr/(bin|lib)/[A-Za-z0-9._+-]+") || !soname.matches("lib[A-Za-z0-9_]+\\.so")) {
+            if (!LINK_PATH_PATTERN.matcher(path).matches() || !SONAME_PATTERN.matcher(soname).matches()) {
                 throw new IOException("Unsafe runtime entry");
             }
             links.add(new String[]{path, soname});
@@ -157,7 +193,7 @@ final class AndroidRuntime {
 
     private static String requireField(String json, String name) throws IOException {
         String value = optionalField(json, name);
-        if (value == null || !value.matches("[a-f0-9]{64}")) {
+        if (value == null || !SHA256_PATTERN.matcher(value).matches()) {
             throw new IOException("Invalid runtime manifest field: " + name);
         }
         return value;
@@ -179,13 +215,9 @@ final class AndroidRuntime {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             byte[] buffer = new byte[8192];
             int read;
-            while ((read = input.read(buffer)) != -1) out(output, buffer, read);
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
             return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
-    }
-
-    private static void out(ByteArrayOutputStream output, byte[] buffer, int read) {
-        output.write(buffer, 0, read);
     }
 
     private static String readText(File file) throws IOException {
@@ -201,15 +233,36 @@ final class AndroidRuntime {
         file.delete();
     }
 
+    /** 停止本进程启动的 Node 服务端（用于清除本机数据并重启前释放文件句柄与端口）。 */
+    static void stopServer() {
+        Process owned;
+        synchronized (PROCESS_LOCK) {
+            owned = activeProcess;
+            activeProcess = null;
+            activePort = 0;
+        }
+        killQuietly(owned);
+    }
+
     /** 启动本机服务端并等待 /api/server-info 真实可访问；返回监听端口。 */
     static int startServer(android.content.Context context, File root) throws RuntimeStartException {
+        // 若本进程自己启动的服务端仍然存活且健康，直接复用同一端口，避免重复拉起子进程。
+        synchronized (PROCESS_LOCK) {
+            if (activeProcess != null && activeProcess.isAlive() && activePort > 0
+                    && isServerHealthy(activePort)) {
+                return activePort;
+            }
+            killQuietly(activeProcess);
+            activeProcess = null;
+            activePort = 0;
+        }
+
         File node = new File(root, "usr/bin/node");
         File server = new File(root, "server/entry-http.mjs");
         File www = new File(root, "server/www");
         if (!node.isFile() || !server.isFile() || !www.isDirectory()) {
             throw new RuntimeStartException("Runtime bundle is incomplete");
         }
-        // 端口由内核分配后回读日志，避免固定端口与同机其它实例冲突。
         File workspace = new File(context.getFilesDir(), "workspace");
         // HOME 保持 getFilesDir() 的原始形式：HyperOS 上规范的 /data/data 路径会被
         // 文件系统访问策略拒绝（实测 EACCES），必须在运行时内处理 /data/user/0 别名。
@@ -234,10 +287,7 @@ final class AndroidRuntime {
         builder.redirectErrorStream(true);
         builder.redirectOutput(log);
         builder.environment().put("HOME", home.getAbsolutePath());
-        builder.environment().put("TMPDIR", new File(home, "tmp").getAbsolutePath());
-        // 固定端口：WebView 按 origin 隔离存储，端口每次变化都会让会话草稿、
-        // 滚动位置、主题等 localStorage 状态整体丢失；固定后同一设备状态可延续。
-        // 端口被占用时先尝试复用已在运行的服务端（见 startServer 的回退分支）。
+        builder.environment().put("TMPDIR", tmpDir.getAbsolutePath());
         builder.environment().put("LCODE_SERVER_PORT", String.valueOf(PREFERRED_PORT));
         builder.environment().put("LCODE_ANDROID_RUNTIME_ROOT", new File(root, "server").getAbsolutePath());
         builder.environment().put("LCODE_WEB_STATIC_ROOT", www.getAbsolutePath());
@@ -245,7 +295,6 @@ final class AndroidRuntime {
         builder.environment().put("LCODE_DATA_BASE_DIR", dataDir.getAbsolutePath());
         // 官网 /app/oauth/login 只接受 zcode://oauth/callback 作为 redirect，
         // 传 lcode:// 会被判为无效，页面上的「打开 ZCode」按钮点了也没有反应。
-        // 桌面端两个 scheme 都注册，Android 这里同样两个都注册（见 AndroidManifest）。
         builder.environment().put("LCODE_OAUTH_CALLBACK_URI", "zcode://oauth/callback");
         // 运行时自带 CA 包（Termux ca-certificates）。Node 使用编译期内置根证书，
         // 在该 Android 运行时上会对真实证书报 UNABLE_TO_GET_ISSUER_CERT_LOCALLY。
@@ -260,8 +309,6 @@ final class AndroidRuntime {
         builder.environment().put("LD_LIBRARY_PATH", new File(root, "usr/lib").getAbsolutePath());
         // Agent 由随包 Node 执行随包 lcode.cjs：会话、终端与工具都在本机运行，不依赖桌面 Host。
         // 不能使用 .sh 包装器：Android 10+ 禁止从应用数据目录执行脚本（实测 spawn EACCES）。
-        // 因此直接把 node + lcode.cjs 作为命令，并把 Agent 需要的路径全部放进服务端环境，
-        // 由服务端派生 Agent 时继承（服务端以 ...process.env 为基底构建子进程环境）。
         builder.environment().put("LCODE_AGENT_SERVER_COMMAND", node.getAbsolutePath());
         builder.environment().put("LCODE_AGENT_SERVER_ARGS_JSON",
                 "[\"" + new File(root, "server/lcode.cjs").getAbsolutePath()
@@ -269,42 +316,56 @@ final class AndroidRuntime {
         builder.environment().put("LCODE_BUILTIN_PROVIDER_CONFIG_FILE",
                 new File(root, "server/lcode-builtin.json").getAbsolutePath());
         // 服务端把个人 provider 配置写在 LCODE_DATA_BASE_DIR/.lcode/v2 下，
-        // 而应用数据目录与 home 是两处；Agent 必须读到同一份文件，否则 providerCount=0，
-        // 模型检测会被 "当前没有可用的模型供应商和模型" 拒绝。
+        // 而应用数据目录与 home 是两处；Agent 必须读到同一份文件，否则 providerCount=0。
         builder.environment().put("LCODE_PERSONAL_PROVIDER_CONFIG_FILE",
                 new File(dataDir, ".lcode/v2/provider_config.json").getAbsolutePath());
+
+        // 启动前清理上一轮残留的 runtime.log，防止 waitForPort 误读上一次运行的旧端口号。
+        //noinspection ResultOfMethodCallIgnored
+        log.delete();
         Process process = startOnce(builder);
         int port;
         try {
-            port = waitForPort(log);
+            port = waitForPort(process, log, START_TIMEOUT_MILLIS);
         } catch (RuntimeStartException preferredPortFailure) {
-            // 固定端口已有服务端在跑（最常见来源：另一个 MainActivity 实例先启动）。
-            // 直接复用它的同一个 origin，而不是回退随机端口——换端口等于换 origin，
-            // WebView 的 localStorage 会被整体隔离，用户看到的就是「会话和模型都没了」。
+            // 首选端口被同机其它进程（如共存的另一个客户端实例）占用时，绝不盲连外部端口，
+            // 而是立即清理失败进程并让内核分配空闲端口（LCODE_SERVER_PORT=0），确保数据完全隔离。
             killQuietly(process);
-            if (awaitServerQuietly(PREFERRED_PORT)) {
-                return PREFERRED_PORT;
-            }
+            //noinspection ResultOfMethodCallIgnored
+            log.delete();
             builder.environment().put("LCODE_SERVER_PORT", "0");
             process = startOnce(builder);
-            port = waitForPort(log);
+            try {
+                port = waitForPort(process, log, START_TIMEOUT_MILLIS);
+            } catch (RuntimeStartException fallbackFailure) {
+                killQuietly(process);
+                throw fallbackFailure;
+            }
         }
-        awaitServer(port, log);
+        try {
+            awaitServer(process, port, log);
+        } catch (RuntimeStartException readinessFailure) {
+            killQuietly(process);
+            throw readinessFailure;
+        }
+        synchronized (PROCESS_LOCK) {
+            activeProcess = process;
+            activePort = port;
+        }
         return port;
     }
 
-    /** 端口上是否已有一个真实的 LCode 服务端；不满足则返回 false，不做任何假设。 */
-    private static boolean awaitServerQuietly(int port) {
+    /** 检查本进程已持有的服务端端口是否正常响应。 */
+    private static boolean isServerHealthy(int port) {
         java.net.HttpURLConnection connection = null;
         try {
             connection = (java.net.HttpURLConnection) new java.net.URL(
                     "http://127.0.0.1:" + port + "/api/server-info").openConnection();
-            connection.setConnectTimeout(2000);
-            connection.setReadTimeout(3000);
+            connection.setConnectTimeout(1500);
+            connection.setReadTimeout(2000);
             if (connection.getResponseCode() != 200) return false;
             try (InputStream body = connection.getInputStream()) {
                 String text = new String(readAll(body), StandardCharsets.UTF_8);
-                // 只认本应用的服务端，避免把同端口上其它进程误当成运行时。
                 return text.contains("\"serverId\"");
             }
         } catch (IOException ignored) {
@@ -322,20 +383,6 @@ final class AndroidRuntime {
         return out.toByteArray();
     }
 
-    /**
-     * files 目录的规范路径。
-     * Android 上 {@code /data/user/0/<pkg>} 是 {@code /data/data/<pkg>} 的别名，
-     * Node 的 realpath 会解析成后者；Project Memory 要求 realpath(path)===path，
-     * 因此交给运行时的 HOME 必须是规范形式。
-     */
-    private static File canonicalFilesDir(android.content.Context context) {
-        try {
-            return context.getFilesDir().getCanonicalFile();
-        } catch (IOException | RuntimeException exception) {
-            return context.getFilesDir();
-        }
-    }
-
     private static Process startOnce(ProcessBuilder builder) throws RuntimeStartException {
         try {
             return builder.start();
@@ -348,46 +395,99 @@ final class AndroidRuntime {
         if (process == null) return;
         try {
             process.destroy();
+            if (!process.waitFor(500, TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly();
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            try {
+                process.destroyForcibly();
+            } catch (RuntimeException ignored) {}
         } catch (RuntimeException ignored) {
             // 进程可能已自行退出。
         }
     }
 
-    /** 从服务端启动日志中读取实际监听端口；这是上游已有的稳定输出格式。 */
-    private static int waitForPort(File log) throws RuntimeStartException {
-        long deadline = System.currentTimeMillis() + START_TIMEOUT_MILLIS;
-        java.util.regex.Pattern pattern =
-                java.util.regex.Pattern.compile("http://127\\.0\\.0\\.1:(\\d{2,5})");
+    /**
+     * 从服务端启动日志中读取实际监听端口。
+     *
+     * <p>修复启动期崩溃假死：原实现未检查 {@code process.isAlive()}，当端口被占用或二进制报错退出时，
+     * 仍会空等满 120 秒。现一旦检测到子进程已退出且日志无端口，立即快速失败并附带退出码。
+     * 同时采用增量文件读取，避免每 200ms 全量重读整份日志。
+     */
+    static int waitForPort(Process process, File log, long timeoutMillis) throws RuntimeStartException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        StringBuilder tailBuffer = new StringBuilder(512);
+        long readOffset = 0L;
         while (System.currentTimeMillis() < deadline) {
-            if (log.isFile()) {
-                try {
-                    java.util.regex.Matcher matcher = pattern.matcher(readText(log));
-                    if (matcher.find()) {
-                        int port = Integer.parseInt(matcher.group(1));
-                        if (port > 0 && port <= 65535) return port;
-                    }
-                } catch (IOException ignored) {
-                    // 日志仍在写入；继续等到截止时间。
-                }
+            readOffset = appendNewLogChunk(log, readOffset, tailBuffer);
+            int parsed = extractPort(tailBuffer);
+            if (parsed > 0) return parsed;
+            if (process != null && !process.isAlive()) {
+                appendNewLogChunk(log, readOffset, tailBuffer);
+                int finalPort = extractPort(tailBuffer);
+                if (finalPort > 0) return finalPort;
+                throw new RuntimeStartException("Local runtime exited early (code "
+                        + process.exitValue() + ").\n" + tail(log));
             }
             sleepBriefly();
         }
         throw new RuntimeStartException("Local runtime did not report a listening port.\n" + tail(log));
     }
 
+    private static long appendNewLogChunk(File log, long offset, StringBuilder buffer) {
+        if (log == null || !log.isFile()) return offset;
+        try (RandomAccessFile raf = new RandomAccessFile(log, "r")) {
+            long length = raf.length();
+            if (length < offset) {
+                offset = 0L;
+                buffer.setLength(0);
+            }
+            if (length == offset) return offset;
+            long toRead = Math.min(length - offset, 64 * 1024L);
+            raf.seek(offset);
+            byte[] chunk = new byte[(int) toRead];
+            int read = raf.read(chunk);
+            if (read > 0) {
+                buffer.append(new String(chunk, 0, read, StandardCharsets.UTF_8));
+                // 只保留足够匹配 URL 的滑窗，避免长启动日志无界增长。
+                if (buffer.length() > 8192) {
+                    buffer.delete(0, buffer.length() - 4096);
+                }
+                return offset + read;
+            }
+        } catch (IOException ignored) {
+            // 日志仍在并发写入；下一拍继续读取。
+        }
+        return offset;
+    }
+
+    static int extractPort(CharSequence text) {
+        Matcher matcher = PORT_PATTERN.matcher(text);
+        if (matcher.find()) {
+            int port = Integer.parseInt(matcher.group(1));
+            if (port > 0 && port <= 65535) return port;
+        }
+        return -1;
+    }
+
     private static void sleepBriefly() throws RuntimeStartException {
         try {
-            Thread.sleep(200);
+            Thread.sleep(150);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new RuntimeStartException("Interrupted while starting runtime");
         }
     }
 
-    private static void awaitServer(int port, File log) throws RuntimeStartException {
+    private static void awaitServer(Process process, int port, File log) throws RuntimeStartException {
         long deadline = System.currentTimeMillis() + START_TIMEOUT_MILLIS;
         String url = "http://127.0.0.1:" + port + "/api/server-info";
         while (System.currentTimeMillis() < deadline) {
+            if (process != null && !process.isAlive()) {
+                throw new RuntimeStartException("Local runtime exited before becoming ready (code "
+                        + process.exitValue() + ").\n" + tail(log));
+            }
             java.net.HttpURLConnection connection = null;
             try {
                 connection = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
@@ -404,7 +504,7 @@ final class AndroidRuntime {
                 if (connection != null) connection.disconnect();
             }
             try {
-                Thread.sleep(500);
+                Thread.sleep(300);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeStartException("Interrupted while starting runtime");
@@ -414,9 +514,14 @@ final class AndroidRuntime {
     }
 
     private static String tail(File log) {
-        try {
-            if (!log.isFile()) return "";
-            String text = readText(log);
+        if (log == null || !log.isFile()) return "";
+        try (RandomAccessFile raf = new RandomAccessFile(log, "r")) {
+            long length = raf.length();
+            int size = (int) Math.min(length, 2048L);
+            byte[] bytes = new byte[size];
+            raf.seek(length - size);
+            raf.readFully(bytes);
+            String text = new String(bytes, StandardCharsets.UTF_8);
             return text.length() <= 1200 ? text : text.substring(text.length() - 1200);
         } catch (IOException exception) {
             return "";

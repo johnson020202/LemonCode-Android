@@ -157,3 +157,26 @@ test("in-app updater ships safe versioning, checksums and FileProvider install",
   );
   assert.ok(version.includes("isNewer"), "numeric version compare, not string compare");
 });
+
+test("coexist build isolates package id, loopback port, test provider, and release updater suffix", async () => {
+  const gradle = await readFile(resolve(root, "apps/android/app/build.gradle"), "utf8");
+  assert.match(gradle, /vin\.lemon\.android\.plus/u);
+  assert.ok(gradle.includes("PREFERRED_SERVER_PORT"));
+  assert.ok(gradle.includes("UPDATE_ASSET_SUFFIX"));
+  assert.ok(gradle.includes("OAUTH_SCHEME"));
+
+  const testManifest = await readFile(
+    resolve(root, "apps/android/app/src/androidTest/AndroidManifest.xml"),
+    "utf8",
+  );
+  assert.ok(testManifest.includes("${applicationId}.gallery"));
+  assert.doesNotMatch(testManifest, /vin\.lemon\.android\.test\.gallery/u);
+
+  const runtime = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/AndroidRuntime.java"),
+    "utf8",
+  );
+  // 严禁在首选端口启动失败后盲连未知进程占用的回环端口（防止连到原版 App 服务端）
+  assert.doesNotMatch(runtime, /awaitServerQuietly\(PREFERRED_PORT\)/u);
+  assert.ok(runtime.includes("stopServer()"));
+});

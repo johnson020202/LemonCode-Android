@@ -106,6 +106,7 @@ public final class ScanActivity extends Activity implements LifecycleOwner {
     }
 
     @Override protected void onStop() {
+        cameraBound = false;
         lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP);
         super.onStop();
     }
@@ -231,11 +232,17 @@ public final class ScanActivity extends Activity implements LifecycleOwner {
             while (bounds.outWidth / sample * (bounds.outHeight / sample) > MAX_BITMAP_PIXELS) {
                 sample *= 2;
             }
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = sample;
-            Bitmap bitmap = BitmapFactory.decodeByteArray(encoded, 0, encoded.length, options);
-            if (bitmap == null) throw new IOException("Unable to decode image");
-            scanner.process(InputImage.fromBitmap(bitmap, 0))
+        // 二维码为黑白高对比图像，使用 RGB_565 解码可省下一半像素内存，并在页面已销毁时安全回收避免调已关闭的 scanner。
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        options.inPreferredConfig = Bitmap.Config.RGB_565;
+        Bitmap bitmap = BitmapFactory.decodeByteArray(encoded, 0, encoded.length, options);
+        if (bitmap == null) throw new IOException("Unable to decode image");
+        if (isFinishing() || isDestroyed() || delivered.get()) {
+            bitmap.recycle();
+            return;
+        }
+        scanner.process(InputImage.fromBitmap(bitmap, 0))
                     .addOnSuccessListener(barcodes -> {
                         if (barcodes.isEmpty()) showGalleryMessage(R.string.scan_gallery_empty);
                         else deliver(barcodes);

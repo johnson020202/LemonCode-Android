@@ -55,6 +55,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lcode" android:host="oauth" android:path="/callback" />
                 <data android:scheme="zcode" android:host="oauth" android:path="/callback" />
+                <data android:scheme="${oauthScheme}" android:host="oauth" android:path="/callback" />
             </intent-filter>
         </activity>
         <activity

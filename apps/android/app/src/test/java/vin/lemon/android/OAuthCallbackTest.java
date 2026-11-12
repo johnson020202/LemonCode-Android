@@ -27,6 +27,14 @@ public final class OAuthCallbackTest {
         assertNull(OAuthCallback.accept("zcode://user@oauth/callback?code=x"));
     }
 
+    @Test public void acceptsDedicatedCoexistSchemeWithoutBreakingStandardSchemes() {
+        String coexistUrl = "lcodeplus://oauth/callback?code=coexist_code&state=st_1";
+        assertEquals(coexistUrl, OAuthCallback.accept(coexistUrl, "lcodeplus"));
+        assertEquals("LCODEPLUS://oauth/callback?code=1",
+                OAuthCallback.accept("LCODEPLUS://oauth/callback?code=1", "lcodeplus"));
+        assertNull(OAuthCallback.accept("otherapp://oauth/callback?code=1", "lcodeplus"));
+    }
+
     @Test public void rejectsOtherSchemesHostsAndPaths() {
         assertNull(OAuthCallback.accept("https://oauth/callback?code=x"));
         assertNull(OAuthCallback.accept("lcode://other/callback?code=x"));

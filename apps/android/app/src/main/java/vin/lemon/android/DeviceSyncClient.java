@@ -2,6 +2,7 @@ package vin.lemon.android;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -10,6 +11,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
 
 /**
  * 把原生层拉到的快照交给本机回环服务端写入会话库。
@@ -22,7 +24,8 @@ public final class DeviceSyncClient {
     private static final int CONNECT_TIMEOUT_MS = 5_000;
     private static final int READ_TIMEOUT_MS = 30_000;
     private static final int MAX_RESPONSE_BYTES = 64 * 1024;
-    private static final String SESSION_ID_PATTERN = "[A-Za-z0-9_-]{1,200}";
+    private static final Pattern SESSION_ID_PATTERN = Pattern.compile("[A-Za-z0-9_-]{1,200}");
+    private static final Pattern CAPABILITY_PATTERN = Pattern.compile("[A-Za-z0-9_-]{16,512}");
 
     private DeviceSyncClient() {}
 
@@ -31,14 +34,33 @@ public final class DeviceSyncClient {
         if (port < 1 || port > 65535) {
             throw new CopyClient.SyncException(CopyClient.Failure.REJECTED, "Invalid local port");
         }
-        if (snapshotJson == null || snapshotJson.isEmpty()) {
+        if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
             throw new CopyClient.SyncException(CopyClient.Failure.INVALID_RESPONSE, "Empty snapshot");
         }
+        // 先校验远端返回的快照确实是合法 JSON 对象，避免畸形载荷直接做字符串拼接生成损坏的导入请求体。
+        JSONObject parsedSnapshot;
+        try {
+            Object value = new JSONTokener(snapshotJson).nextValue();
+            if (!(value instanceof JSONObject)) {
+                throw new CopyClient.SyncException(CopyClient.Failure.INVALID_RESPONSE,
+                        "Snapshot must be a JSON object");
+            }
+            parsedSnapshot = (JSONObject) value;
+        } catch (JSONException exception) {
+            throw new CopyClient.SyncException(CopyClient.Failure.INVALID_RESPONSE,
+                    "Malformed snapshot JSON");
+        }
         String capability = issueCapability(port);
-        JSONObject response = post(port, "/api/device-sync/import", capability,
-                "{\"snapshot\":" + snapshotJson + "}");
+        String payload;
+        try {
+            payload = new JSONObject().put("snapshot", parsedSnapshot).toString();
+        } catch (JSONException exception) {
+            throw new CopyClient.SyncException(CopyClient.Failure.INVALID_RESPONSE,
+                    "Cannot encode snapshot");
+        }
+        JSONObject response = post(port, "/api/device-sync/import", capability, payload);
         String sessionId = response.optString("sessionId", "").trim();
-        if (!sessionId.matches(SESSION_ID_PATTERN)) {
+        if (!SESSION_ID_PATTERN.matcher(sessionId).matches()) {
             throw new CopyClient.SyncException(CopyClient.Failure.INVALID_RESPONSE,
                     "Missing session id");
         }
@@ -48,7 +70,7 @@ public final class DeviceSyncClient {
     private static String issueCapability(int port) throws CopyClient.SyncException {
         JSONObject response = post(port, "/api/rpc-host-capability", null, null);
         String capability = response.optString("capability", "").trim();
-        if (!capability.matches("[A-Za-z0-9_-]{16,512}")) {
+        if (!CAPABILITY_PATTERN.matcher(capability).matches()) {
             throw new CopyClient.SyncException(CopyClient.Failure.INVALID_RESPONSE,
                     "Missing host capability");
         }
