@@ -6,8 +6,8 @@ import java.net.URISyntaxException;
 /**
  * 纯 Java 的本机来源策略；无 Android 依赖，可直接单元测试。
  *
- * <p>独立运行版本只允许 WebView 访问手机内回环地址上的本地运行时，
- * 其他 https 链接交给系统浏览器，其余协议一律拒绝。
+ * <p>WebView 可访问手机内回环运行时与 Worker 托管的 HTTPS 远控页；
+ * 其他 HTTPS 链接交给系统浏览器，其余协议一律拒绝。远控页不依赖本机 Node 就绪。
  */
 public final class UrlPolicy {
     private static final int MAX_URL_LENGTH = 8192;
@@ -46,8 +46,7 @@ public final class UrlPolicy {
     }
 
     public static Navigation localNavigation(LocalOrigin origin, String value) {
-        if (origin == null) return Navigation.BLOCK;
-        if (origin.allows(value)) return Navigation.IN_APP;
+        if (origin != null && origin.allows(value)) return Navigation.IN_APP;
         try {
             URI uri = new URI(value);
             if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.isOpaque()
