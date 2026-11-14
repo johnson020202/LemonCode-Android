@@ -77,6 +77,44 @@ public final class MainActivity extends Activity {
     private static final int MAX_MIME_TYPES = 32;
     private static final String PROBE_SCRIPT =
             "window.__lcodeRemoteWakeProbe&&window.__lcodeRemoteWakeProbe()";
+    /** 旧 Worker 的兼容看门狗；静态复用，避免每次导航重复拼接整段脚本。 */
+    private static final String MIRROR_LIVENESS_FALLBACK = "(function(){"
+            + "if(window.__lcodeRemoteWakeProbe)return;"
+            + "var items=[];"
+            + "function clearTimer(s){if(s.timer!==null){clearTimeout(s.timer);s.timer=null;}}"
+            + "function expire(s){clearTimer(s);try{s.ws.close(4001,'heartbeat');}catch(e){}}"
+            + "function schedule(s){clearTimer(s);if(s.ws.readyState!==1)return;"
+            + "var now=Date.now();var delay=Math.max(250,Math.min(s.inbound+30000,s.inbound+45000)-now);"
+            + "s.timer=setTimeout(function(){s.timer=null;if(s.ws.readyState!==1)return;"
+            + "var at=Date.now();if(at-s.inbound>=45000){expire(s);return;}"
+            + "try{s.ws.send('{\"type\":\"ping\"}');}catch(e){}schedule(s);},delay);}"
+            + "function probe(){var now=Date.now();"
+            + "for(var i=items.length-1;i>=0;i--){var s=items[i];"
+            + "if(s.ws.readyState>1){clearTimer(s);items.splice(i,1);continue;}"
+            + "if(s.ws.readyState!==1)continue;"
+            + "if(now-s.inbound>=45000||s.probeAt&&now-s.probeAt>=8000){"
+            + "expire(s);items.splice(i,1);continue;}"
+            + "try{s.ws.send('{\"type\":\"ping\"}');s.probeAt=now;}catch(e){}"
+            + "clearTimer(s);s.timer=setTimeout(function(){"
+            + "if(s.probeAt&&Date.now()-s.probeAt>=8000)expire(s);else schedule(s);},8050);}}"
+            + "window.__lcodeRemoteWakeProbe=probe;"
+            + "window.__lcodeRemotePingTick=probe;"
+            + "window.addEventListener('online',probe);"
+            + "document.addEventListener('visibilitychange',function(){"
+            + "if(document.visibilityState==='visible')probe();});"
+            + "var NativeWebSocket=window.WebSocket;"
+            + "function TrackedWebSocket(url,protocols){"
+            + "var ws=protocols===undefined?new NativeWebSocket(url):new NativeWebSocket(url,protocols);"
+            + "var item={ws:ws,inbound:Date.now(),probeAt:0,timer:null};items.push(item);"
+            + "ws.addEventListener('message',function(){item.inbound=Date.now();item.probeAt=0;schedule(item);});"
+            + "ws.addEventListener('open',function(){schedule(item);});"
+            + "return ws;}"
+            + "TrackedWebSocket.prototype=NativeWebSocket.prototype;"
+            + "TrackedWebSocket.CONNECTING=NativeWebSocket.CONNECTING;"
+            + "TrackedWebSocket.OPEN=NativeWebSocket.OPEN;"
+            + "TrackedWebSocket.CLOSING=NativeWebSocket.CLOSING;"
+            + "TrackedWebSocket.CLOSED=NativeWebSocket.CLOSED;"
+            + "window.WebSocket=TrackedWebSocket;})();";
 
     private SharedPreferences preferences;
     private View homePanel;
@@ -185,7 +223,12 @@ public final class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         String callback = OAuthCallback.accept(intentData(intent));
-        if (callback == null) return;
+        if (callback == null) {
+            // 通知点击也必须直达已授权远控，不依赖已启动的本机 Node。
+            String saved = RestorablePage.restore(null, preferences.getString(LAST_PAGE, null));
+            if (saved != null) launchRuntime(saved);
+            return;
+        }
         pendingOAuthCallback = callback;
         // 授权期间可能停在官网套餐页等远程页面，那些页面没有回调钩子，
         // 直接注入等于丢弃。先切回本机页面，由它完成登录后再回到原页面。
@@ -728,7 +771,7 @@ public final class MainActivity extends Activity {
                 if (source != webView) return;
                 if (mirrorSessionHost != null && UrlPolicy.localNavigation(origin, url)
                         == UrlPolicy.Navigation.MIRROR) {
-                    // 在页面脚本创建 WebSocket 前包装；onPageFinished 注入已来不及。
+                    // 尽早包装；加载完成后再幂等确认，新 Worker 使用页面自身实现。
                     injectMirrorLivenessFallback(source);
                 }
                 // 新页面等于新 JS 上下文：允许同一条回调在这个页面上重新投递。
@@ -769,7 +812,7 @@ public final class MainActivity extends Activity {
 
             @Override public void onReceivedError(
                     WebView source, WebResourceRequest request, WebResourceError error) {
-                if (!request.isForMainFrame()) return;
+                if (source != webView || !request.isForMainFrame()) return;
                 // 电梯/飞行模式/切网不是取消配对；保留 URL 与 LAST_PAGE，联网后原地恢复。
                 if (mirrorSessionHost != null && UrlPolicy.localNavigation(origin,
                         request.getUrl().toString()) == UrlPolicy.Navigation.MIRROR) {
@@ -1229,47 +1272,8 @@ public final class MainActivity extends Activity {
      * 新版 pairingSockets 导出探活钩子后，原生壳直接走该规范实现。
      */
     private void injectMirrorLivenessFallback(WebView view) {
-        String script = "(function(){"
-                + "if(window.__lcodeRemoteWakeProbe)return;"
-                + "var items=[];"
-                + "function clearTimer(s){if(s.timer!==null){clearTimeout(s.timer);s.timer=null;}}"
-                + "function expire(s){clearTimer(s);"
-                + "try{s.ws.close(4001,'heartbeat');}catch(e){}}"
-                + "function schedule(s){clearTimer(s);if(s.ws.readyState!==1)return;"
-                + "var now=Date.now();var delay=Math.max(250,Math.min(s.inbound+30000,s.inbound+45000)-now);"
-                + "s.timer=setTimeout(function(){s.timer=null;if(s.ws.readyState!==1)return;"
-                + "var at=Date.now();if(at-s.inbound>=45000){expire(s);return;}"
-                + "try{s.ws.send('{\"type\":\"ping\"}');}catch(e){}schedule(s);},delay);}"
-                + "function probe(){var now=Date.now();"
-                + "for(var i=items.length-1;i>=0;i--){var s=items[i];"
-                + "if(s.ws.readyState>1){clearTimer(s);items.splice(i,1);continue;}"
-                + "if(s.ws.readyState!==1)continue;"
-                + "if(now-s.inbound>=45000||s.probeAt&&now-s.probeAt>=8000){"
-                + "expire(s);items.splice(i,1);continue;}"
-                + "try{s.ws.send('{\"type\":\"ping\"}');s.probeAt=now;}catch(e){}"
-                + "clearTimer(s);s.timer=setTimeout(function(){"
-                + "if(s.probeAt&&Date.now()-s.probeAt>=8000)expire(s);else schedule(s);},8050);}}"
-                + "window.__lcodeRemoteWakeProbe=probe;"
-                + "window.__lcodeRemotePingTick=probe;"
-                + "window.addEventListener('online',probe);"
-                + "document.addEventListener('visibilitychange',function(){"
-                + "if(document.visibilityState==='visible')probe();});"
-                + "var NativeWebSocket=window.WebSocket;"
-                + "function TrackedWebSocket(url,protocols){"
-                + "var ws=protocols===undefined?new NativeWebSocket(url):new NativeWebSocket(url,protocols);"
-                + "var item={ws:ws,inbound:Date.now(),probeAt:0,timer:null};items.push(item);"
-                + "ws.addEventListener('message',function(){item.inbound=Date.now();item.probeAt=0;schedule(item);});"
-                + "ws.addEventListener('open',function(){schedule(item);});"
-                + "return ws;}"
-                + "TrackedWebSocket.prototype=NativeWebSocket.prototype;"
-                + "TrackedWebSocket.CONNECTING=NativeWebSocket.CONNECTING;"
-                + "TrackedWebSocket.OPEN=NativeWebSocket.OPEN;"
-                + "TrackedWebSocket.CLOSING=NativeWebSocket.CLOSING;"
-                + "TrackedWebSocket.CLOSED=NativeWebSocket.CLOSED;"
-                + "window.WebSocket=TrackedWebSocket;"
-                + "})();";
         try {
-            view.evaluateJavascript(script, null);
+            view.evaluateJavascript(MIRROR_LIVENESS_FALLBACK, null);
         } catch (RuntimeException ignored) {
             // 页面正在销毁：下一次 onPageFinished 重新注入。
         }
@@ -1361,6 +1365,7 @@ public final class MainActivity extends Activity {
                     connectButton.setEnabled(false);
                     scanButton.setEnabled(false);
                     reconnectButton.setEnabled(false);
+                    resumeMirrorButton.setVisibility(View.GONE);
                     previousOrigin.setText(R.string.no_previous);
                     status.setText(R.string.starting_runtime);
                     // 修复主线程 ANR 与僵尸服务端残留：先在后台线程终止旧 Node 进程释放 SQLite 与端口，
@@ -1375,6 +1380,8 @@ public final class MainActivity extends Activity {
                         runOnUiThread(() -> {
                             if (isFinishing() || isDestroyed()) return;
                             forgetButton.setEnabled(true);
+                            // 远控只依赖 Worker；清理完成后即可重新扫码，不等本机 Node。
+                            scanButton.setEnabled(true);
                             startRuntime();
                         });
                     }, "lcode-runtime-reset").start();
