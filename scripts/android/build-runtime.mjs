@@ -27,7 +27,9 @@ export async function buildServerBundle({ root = repoRoot, outDir = outputDir } 
     target: "node22",
     outfile: outFile,
     // 原生 ABI 模块无法跨平台打包；缺失时由各自服务在调用时降级。
-    external: ["node-pty", "cpu-features", "koffi"],
+    // ssh2 的相对 require 不带包名，若只 external 包名，本机已编译的 sshcrypto.node
+    // 仍会被 esbuild 当作必须打包的文件。它本来就 try/catch 降级到 JS 加密实现。
+    external: ["node-pty", "cpu-features", "koffi", "./crypto/build/Release/sshcrypto.node"],
     define: {
       __LCODE_VERSION__: JSON.stringify(version),
       __LCODE_ENV__: JSON.stringify("production"),
