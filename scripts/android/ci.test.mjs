@@ -189,6 +189,8 @@ test("mirror cold start, recovery and power policy keep their ownership boundari
     "utf8",
   );
   assert.match(keepAlive, /TICK_INTERVAL_MS = 30_000L/u);
+  assert.match(keepAlive, /static void start\(Context context\) \{\s+(?:\/\/[^\n]+\s+)+context\.startService\(new Intent\(context, MirrorKeepAliveService\.class\)\);\s+\}/u);
+  assert.doesNotMatch(keepAlive, /startForegroundService\(/u, "visible background-boundary handoff must not schedule a foreground-service timeout");
   assert.match(keepAlive, /WAKELOCK_LEASE_MS = 10_000L/u);
   assert.ok(keepAlive.includes("power.isDeviceIdleMode()"));
   assert.match(keepAlive, /static void pause\(Context context\) \{\s+\/\/[^\n]+\s+context\.stopService/u);
