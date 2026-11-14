@@ -25,18 +25,19 @@ import java.lang.ref.WeakReference;
  *
  * <p>页面退到后台后，系统会把 WebView 的 JS 定时器节流到每分钟一次甚至暂停，而远控心跳
  * 要求每 30s 一次、Worker 连丢两个周期（约 75s）就关桥。这里把进程提到前台优先级，
- * 并由原生 Handler 每 20s 直接调用页面的心跳钩子
+ * 并由原生 Handler 按 30s 协议周期调用页面的心跳钩子
  * （{@code window.__lcodeRemotePingTick}），不依赖会被节流的 JS 定时器。
+ * 前台不持 WakeLock，后台只在心跳窗口短持锁；深睡允许回收 socket，醒来原页面恢复。
  *
  * <p>只在镜像页面打开期间运行；回到本机工作区或退出应用时立即停止，避免常驻耗电。
  */
 public final class MirrorKeepAliveService extends Service {
     private static final String CHANNEL_ID = "remote-keepalive";
     private static final int NOTIFICATION_ID = 41721;
-    /** 比 JS 侧 30s 心跳更密：即使系统吞掉一两拍，仍落在 Worker 的 75s 关闭窗口内。 */
-    private static final long TICK_INTERVAL_MS = 20_000L;
-    /** 单次持锁时间上限（4 小时），在活跃心跳期间自动续期，防止异常场景永久锁死 CPU 耗电。 */
-    private static final long WAKELOCK_LEASE_MS = 4L * 60L * 60L * 1000L;
+    /** 与 Worker 协议同频，不用更高频心跳换保活。 */
+    private static final long TICK_INTERVAL_MS = 30_000L;
+    /** 后台只在心跳发送/探活窗口持锁；前台由系统正常调度，不持锁。 */
+    private static final long WAKELOCK_LEASE_MS = 10_000L;
     /** 连续丢失目标 WebView 的最大容忍拍数（约 2 分钟），超限自动停止空转保活服务。 */
     private static final int MAX_IDLE_TICKS = 6;
     private static final String PING_SCRIPT =
@@ -55,13 +56,28 @@ public final class MirrorKeepAliveService extends Service {
             if (!ticking) return;
             WeakReference<WebView> ref = target;
             WebView view = ref == null ? null : ref.get();
+            PowerManager power = getSystemService(PowerManager.class);
+            if (power != null && !power.isInteractive()) {
+                if (Build.VERSION.SDK_INT >= 23 && power.isDeviceIdleMode()) {
+                    // 不为对抗深睡永久占 CPU。Worker 可过期 socket，设备授权和恢复地址仍在，
+                    // 回前台由 MainActivity 探活并原页面重连，远控计算始终留在桌面。
+                    handler.removeCallbacks(tick);
+                    releaseWakeLock();
+                    ticking = false;
+                    return;
+                }
+                ensureWakeLockHeld();
+                handler.postDelayed(MirrorKeepAliveService.this::releaseWakeLock, WAKELOCK_LEASE_MS);
+            } else {
+                releaseWakeLock();
+            }
             if (view != null) {
                 idleTicks = 0;
-                ensureWakeLockHeld();
                 try {
+                    // 原生补拍只驱动 socket，不唤醒整个页面渲染器。
                     view.evaluateJavascript(PING_SCRIPT, null);
                 } catch (RuntimeException ignored) {
-                    // 页面或渲染进程已销毁：下一拍等重建后自然恢复，不在这里重建 WebView。
+                    // 页面或渲染进程销毁后等待生命周期重建，不在服务内持有新 WebView。
                 }
             } else if (++idleTicks >= MAX_IDLE_TICKS) {
                 // 目标页面已长时间不存在（例如进程重建后未再进入镜像页），主动退出避免后台白挂通知与耗电。
@@ -90,6 +106,12 @@ public final class MirrorKeepAliveService extends Service {
         context.stopService(new Intent(context, MirrorKeepAliveService.class));
     }
 
+    /** 前台页面自己调度心跳；服务只保留断网/后台恢复所需的通知与唤醒入口。 */
+    static void pause(Context context) {
+        context.startService(new Intent(context, MirrorKeepAliveService.class)
+                .setAction("vin.lemon.android.mirror.PAUSE"));
+    }
+
     @Override public void onCreate() {
         super.onCreate();
         ensureChannel();
@@ -99,18 +121,29 @@ public final class MirrorKeepAliveService extends Service {
             wakeLock = power.newWakeLock(
                     PowerManager.PARTIAL_WAKE_LOCK, getPackageName() + ":mirror-keepalive");
             wakeLock.setReferenceCounted(false);
-            ensureWakeLockHeld();
         }
     }
 
     private void ensureWakeLockHeld() {
-        if (wakeLock != null && !wakeLock.isHeld()) {
-            wakeLock.acquire(WAKELOCK_LEASE_MS);
+        PowerManager power = getSystemService(PowerManager.class);
+        if (power != null && !power.isInteractive() && wakeLock != null && !wakeLock.isHeld()) {
+            wakeLock.acquire(WAKELOCK_LEASE_MS + 2_000L);
         }
+    }
+
+    private void releaseWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         idleTicks = 0;
+        ensureWakeLockHeld();
+        if ("vin.lemon.android.mirror.PAUSE".equals(intent == null ? null : intent.getAction())) {
+            ticking = false;
+            handler.removeCallbacksAndMessages(null);
+            releaseWakeLock();
+            return START_STICKY;
+        }
         ensureWakeLockHeld();
         Notification notification = buildNotification();
         if (Build.VERSION.SDK_INT >= 34) {
@@ -121,10 +154,9 @@ public final class MirrorKeepAliveService extends Service {
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
-        if (!ticking) {
-            ticking = true;
-            handler.postDelayed(tick, TICK_INTERVAL_MS);
-        }
+        handler.removeCallbacksAndMessages(null);
+        if (!ticking) ticking = true;
+        handler.post(tick);
         return START_STICKY;
     }
 
