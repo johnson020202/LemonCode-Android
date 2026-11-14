@@ -38,7 +38,7 @@ public final class MirrorKeepAliveService extends Service {
     private static final long TICK_INTERVAL_MS = 30_000L;
     /** 后台只在心跳发送/探活窗口持锁；前台由系统正常调度，不持锁。 */
     private static final long WAKELOCK_LEASE_MS = 10_000L;
-    /** 连续丢失目标 WebView 的最大容忍拍数（约 2 分钟），超限自动停止空转保活服务。 */
+    /** 连续丢失目标 WebView 的容忍拍数（约 3 分钟），超限自动停止空转服务。 */
     private static final int MAX_IDLE_TICKS = 6;
     private static final String PING_SCRIPT =
             "window.__lcodeRemotePingTick&&window.__lcodeRemotePingTick()";
@@ -106,10 +106,10 @@ public final class MirrorKeepAliveService extends Service {
         context.stopService(new Intent(context, MirrorKeepAliveService.class));
     }
 
-    /** 前台页面自己调度心跳；服务只保留断网/后台恢复所需的通知与唤醒入口。 */
+    /** 前台页面自己调度心跳；停止已有原生补拍任务并释放短锁。 */
     static void pause(Context context) {
-        context.startService(new Intent(context, MirrorKeepAliveService.class)
-                .setAction("vin.lemon.android.mirror.PAUSE"));
+        // 仅关闭已有原生补拍任务，不 startService 创建新的保活服务。
+        context.stopService(new Intent(context, MirrorKeepAliveService.class));
     }
 
     @Override public void onCreate() {
@@ -138,13 +138,6 @@ public final class MirrorKeepAliveService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         idleTicks = 0;
         ensureWakeLockHeld();
-        if ("vin.lemon.android.mirror.PAUSE".equals(intent == null ? null : intent.getAction())) {
-            ticking = false;
-            handler.removeCallbacksAndMessages(null);
-            releaseWakeLock();
-            return START_STICKY;
-        }
-        ensureWakeLockHeld();
         Notification notification = buildNotification();
         if (Build.VERSION.SDK_INT >= 34) {
             // connectedDevice：与已配对电脑维持网络连接，属于该类型；dataSync 在 Android 15
@@ -162,7 +155,7 @@ public final class MirrorKeepAliveService extends Service {
 
     @Override public void onDestroy() {
         ticking = false;
-        handler.removeCallbacks(tick);
+        handler.removeCallbacksAndMessages(null);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         wakeLock = null;
         super.onDestroy();
