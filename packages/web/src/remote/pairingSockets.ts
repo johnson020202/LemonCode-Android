@@ -123,25 +123,33 @@ export function openPairingSocket(url: string, onOpen: () => void): Promise<Pair
 
 const HEARTBEAT_INTERVAL_MS = 30_000; // §3.4:手机数据套接字每 30s 一条 TEXT {"type":"ping"}
 const BRIDGE_OPEN_TIMEOUT_MS = 15_000; // bridge.open 是授权后 Worker 的首帧,超时视为建桥失败
+/** send() 只写入本地内核缓冲；45s 无任何入站帧才说明这条 socket 已失去活性。 */
+export const BRIDGE_INBOUND_TIMEOUT_MS = 45_000;
+/** 唤醒/切网后必须快速淘汰旧 NAT 映射，不能等 Worker 的 75s 回收。 */
+export const BRIDGE_PROBE_TIMEOUT_MS = 8_000;
 
 /**
  * 原生壳（Android 前台服务）在后台直接驱动的心跳钩子。
  *
  * 页面退到后台后浏览器会把 JS 定时器节流到每分钟一次甚至暂停，而 Worker 只容忍约 75s
- * 无 ping。原生侧持有前台服务与 WakeLock，每 20s 调用一次这里，绕过定时器节流；
+ * 无 ping。原生前台服务按 30s 协议周期调用这里，在心跳窗口短持锁，避免定时器节流；
  * 只有当前确实存在活动桥接时才会发送，避免页面切走后误发。
  */
 let activeBridgeHeartbeat: (() => void) | null = null;
 
-/** 供原生壳调用：仍持有一个活动桥接时补发一次心跳。 */
-export function pingRemoteBridgeNow(): void {
+/** 供原生壳与页面事件调用：发心跳并要求在短窗口内收到入站响应。 */
+export function probeRemoteBridgeNow(): void {
   activeBridgeHeartbeat?.();
 }
 
 if (typeof window !== "undefined") {
   // 原生壳按固定脚本名求值，改名会静默失效；与 MirrorKeepAliveService 的 PING_SCRIPT 对应。
-  (window as { __lcodeRemotePingTick?: () => void }).__lcodeRemotePingTick =
-    pingRemoteBridgeNow;
+  const bridgeWindow = window as {
+    __lcodeRemotePingTick?: () => void;
+    __lcodeRemoteWakeProbe?: () => void;
+  };
+  bridgeWindow.__lcodeRemotePingTick = probeRemoteBridgeNow;
+  bridgeWindow.__lcodeRemoteWakeProbe = probeRemoteBridgeNow;
 }
 
 export class MobileBridgeError extends Error {
@@ -172,15 +180,23 @@ export function connectBridgedDataSocket(
   return new Promise((resolve, reject) => {
     let settled = false;
     let connected = false;
+    let disconnectNotified = false;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let probeTimeout: ReturnType<typeof setTimeout> | undefined;
     let socket: WebSocket | undefined;
     let resolveBridgeOpen: (() => void) | undefined;
     let ownedPing: (() => void) | null = null;
+    let lastInboundAt = Date.now();
+    let bridgeOpened = false;
 
     const stopHeartbeat = () => {
       if (heartbeat !== undefined) {
-        clearInterval(heartbeat);
+        clearTimeout(heartbeat);
         heartbeat = undefined;
+      }
+      if (probeTimeout !== undefined) {
+        clearTimeout(probeTimeout);
+        probeTimeout = undefined;
       }
       // 原生补拍与页面定时器同生共死：套接字关闭后不能再往旧连接发 ping。
       // 只摘自己那一份——重连时新连接已先注册，旧连接的迟到 close 不能把新钩子清掉。
@@ -189,19 +205,28 @@ export function connectBridgedDataSocket(
       }
       ownedPing = null;
     };
+    const notifyDisconnected = (key: PairingFailureKey) => {
+      if (!connected || disconnectNotified) return;
+      disconnectNotified = true;
+      // 新连接已经接管全局补拍入口时，旧 socket 的迟到 close 不能停掉新心跳。
+      stopHeartbeat();
+      onDisconnected?.(key);
+    };
     const fail = (key: PairingFailureKey, detail?: string) => {
-      if (settled) {
-        return;
-      }
+      // 已接管 socket 的心跳失败要主动通知；迟到 close 由 disconnectNotified 去重。
+      if (settled && !connected) return;
       settled = true;
       clearTimeout(bridgeTimeout);
       stopHeartbeat();
       try {
+        // 半开连接在 Chromium 中可能一直停在 CLOSING；onClose 前若建连已接管，
+        // 必须直接通知当前 generation，不能依赖一个可能永远不到的 close 事件。
+        notifyDisconnected(key);
         socket?.close();
       } catch {
         // 套接字可能已在关闭流程中
       }
-      reject(new MobileBridgeError(key, detail));
+      if (!connected) reject(new MobileBridgeError(key, detail));
     };
     const bridgeTimeout = setTimeout(() => fail("bridge-timeout"), BRIDGE_OPEN_TIMEOUT_MS);
     const bridgeOpen = new Promise<void>((resolveBridge) => {
@@ -218,23 +243,58 @@ export function connectBridgedDataSocket(
         // 接管后断链:交给调用方的重连监督者执行 §3.3 的 resumed 重连;
         // 未提供回调时保持既有 web 行为(静默,无重连执行者)。
         // 超时拒绝也会 settled，但未交付 services；不能因此刷新整页打断原重试。
-        if (connected) onDisconnected?.(describePairingClose(event.code, event.reason));
+        notifyDisconnected(describePairingClose(event.code, event.reason));
       },
       onOpenSocket: (ws) => {
         socket = ws;
         const sendPing = () => {
-          if (ws.readyState === WebSocket.OPEN) {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          try {
             ws.send('{"type":"ping"}');
+          } catch {
+            // 发送失败时交给看门狗按 heartbeat 淘汰，不把异常漏成未处理 rejection。
           }
         };
-        heartbeat = setInterval(sendPing, HEARTBEAT_INTERVAL_MS);
-        // 前台服务用同一个发送器补拍；断开后必须摘掉，否则会把心跳发到已关闭的套接字。
-        ownedPing = sendPing;
-        activeBridgeHeartbeat = sendPing;
+        // 单连接探活器：任何入站帧都取消截止；不额外解析 pong 或触碰二进制协议。
+        const armProbeDeadline = () => {
+          if (probeTimeout !== undefined) clearTimeout(probeTimeout);
+          probeTimeout = setTimeout(() => fail("heartbeat"), BRIDGE_PROBE_TIMEOUT_MS);
+        };
+        const probe = () => {
+          sendPing();
+          armProbeDeadline();
+        };
+        const armLivenessDeadline = () => {
+          if (heartbeat !== undefined) clearTimeout(heartbeat);
+          // 协议只要求 30s ping。空闲时不运行 5s 轮询，减少后台 CPU 与无线电唤醒。
+          const nextPingAt = lastInboundAt + HEARTBEAT_INTERVAL_MS;
+          const timeoutAt = lastInboundAt + BRIDGE_INBOUND_TIMEOUT_MS;
+          const delay = Math.max(250, Math.min(nextPingAt, timeoutAt) - Date.now());
+          heartbeat = setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            if (bridgeOpened && Date.now() - lastInboundAt >= BRIDGE_INBOUND_TIMEOUT_MS) {
+              fail("heartbeat");
+              return;
+            }
+            sendPing();
+            armLivenessDeadline();
+          }, delay);
+        };
+        armLivenessDeadline();
+        // 前台服务用同一个发送器补拍并验证入站活性，绕过休眠后的定时器节流。
+        ownedPing = probe;
+        activeBridgeHeartbeat = probe;
         ws.addEventListener("message", (event) => {
+          lastInboundAt = Date.now();
+          if (probeTimeout !== undefined) {
+            clearTimeout(probeTimeout);
+            probeTimeout = undefined;
+          }
           if (parsePairingControlFrame(event.data)?.type === "bridge.open") {
+            bridgeOpened = true;
             resolveBridgeOpen?.();
           }
+          armLivenessDeadline();
         });
       },
     }).then(
@@ -245,6 +305,8 @@ export function connectBridgedDataSocket(
           }
           settled = true;
           connected = true;
+          bridgeOpened = true;
+          lastInboundAt = Date.now();
           clearTimeout(bridgeTimeout);
           resolve(services);
         });
