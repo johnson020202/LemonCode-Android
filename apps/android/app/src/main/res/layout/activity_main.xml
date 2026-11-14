@@ -87,6 +87,15 @@
                 android:text="@string/reconnect"
                 android:enabled="false" />
 
+            <Button
+                android:id="@+id/resume_mirror"
+                style="@style/Button.LemonCode.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_small"
+                android:text="@string/resume_mirror"
+                android:visibility="gone" />
+
             <TextView
                 style="@style/Text.LemonCode.Section"
                 android:layout_width="match_parent"
