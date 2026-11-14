@@ -6,16 +6,18 @@ import {
   buildDataSocketUrl,
   connectBridgedDataSocket,
   MobileBridgeError,
+  probeRemoteBridgeNow,
 } from "./pairingSockets.js";
 import { MobilePairingPage } from "./MobilePairingPage.js";
 import {
+  createRetryDelay,
   CREDENTIAL_DEATH_KEYS,
   DATA_SOCKET_RETRY_DEADLINE_MS,
   DATA_SOCKET_RETRY_DELAY_MS,
   DATA_SOCKET_RETRY_KEYS,
+  retirePairingCredentialOnFailure,
 } from "./mirrorReconnect.js";
 import {
-  clearStoredPairingCredential,
   loadStoredPairingCredential,
   saveStoredPairingCredential,
 } from "./pairingCredentialStore.js";
@@ -50,12 +52,10 @@ export function MirrorSessionGate({
   const roomIdRef = useRef<string | null>(route.roomId);
   const mountedRef = useRef(true);
   const reconnectRef = useRef<(roomId: string, credential: string) => void>(() => {});
+  const wakeRetryRef = useRef<(() => void) | null>(null);
 
   const markDead = useCallback((key: PairingFailureKey, credential: string) => {
-    clearStoredPairingCredential(
-      key === "revoked" ? undefined : roomIdRef.current ?? undefined,
-      credential,
-    );
+    retirePairingCredentialOnFailure(key, roomIdRef.current ?? "", credential);
     credentialRef.current = null;
     generationRef.current += 1;
     setState((current) =>
@@ -85,6 +85,8 @@ export function MirrorSessionGate({
 
   reconnectRef.current = (roomId, credential) => {
     const generation = ++generationRef.current;
+    const retryDelay = createRetryDelay();
+    wakeRetryRef.current = retryDelay.wake;
     setState((current) =>
       current.kind === "pairing" ? current : { ...current, kind: "reconnecting" },
     );
@@ -125,9 +127,11 @@ export function MirrorSessionGate({
           ) {
             break;
           }
-          await new Promise((resolve) => setTimeout(resolve, DATA_SOCKET_RETRY_DELAY_MS));
+          await retryDelay.wait();
         }
       }
+      if (wakeRetryRef.current === retryDelay.wake) wakeRetryRef.current = null;
+      retryDelay.cancel();
       if (mountedRef.current && generationRef.current === generation) {
         setState((current) =>
           current.kind === "pairing" ? current : { ...current, kind: "failed" },
@@ -168,20 +172,33 @@ export function MirrorSessionGate({
    *
    * 后台期间 JS 定时器被系统节流，重连监督者的重试循环可能在不可见时就耗尽预算并落到
    * failed；等用户切回来才手动点「重试」是很差的体验。可见性恢复时若仍持有设备凭据，
-   * 直接重新发起一次恢复（凭据仍有效时 Worker 侧不会二次确认）。
+   * 直接重新发起一次恢复（凭据仍有效时 Worker 侧不会二次确认）。重连中的等待
+   * 由同一循环唤醒，不创建第二条重试所有者。
    */
   useEffect(() => {
-    const handleVisible = () => {
-      if (document.visibilityState !== "visible") return;
+    const recover = () => {
       const current = stateRef.current;
-      if (current.kind === "pairing" || current.kind === "connected") return;
+      if (current.kind === "pairing") return;
+      if (current.kind === "connected") {
+        probeRemoteBridgeNow();
+        return;
+      }
       if (!credentialRef.current) return;
-      // reconnecting 的循环会随定时器恢复自行推进；这里只接管已经落到终态等待手动重试的情况。
-      if (current.kind === "reconnecting") return;
+      if (current.kind === "reconnecting") {
+        wakeRetryRef.current?.();
+        return;
+      }
       reconnectRef.current(current.roomId, current.credential);
     };
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") recover();
+    };
     document.addEventListener("visibilitychange", handleVisible);
-    return () => document.removeEventListener("visibilitychange", handleVisible);
+    window.addEventListener("online", recover);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("online", recover);
+    };
   }, []);
 
   useEffect(
