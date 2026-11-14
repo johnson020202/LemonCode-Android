@@ -1,16 +1,17 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PairingDeepLinkRoute } from "./pairingDeepLink.js";
 import {
-  clearStoredPairingCredential,
   loadStoredPairingCredential,
   saveStoredPairingCredential,
 } from "./pairingCredentialStore.js";
 import type { PairingFailureKey } from "./pairingFrames.js";
 import {
+  createRetryDelay,
   CREDENTIAL_DEATH_KEYS,
   DATA_SOCKET_RETRY_DEADLINE_MS,
   DATA_SOCKET_RETRY_DELAY_MS,
   DATA_SOCKET_RETRY_KEYS,
+  retirePairingCredentialOnFailure,
   shouldFallbackToPairingCapability,
 } from "./mirrorReconnect.js";
 import {
@@ -143,6 +144,10 @@ export function MobilePairingPage({
   onDisconnected: (key: PairingFailureKey) => void;
 }) {
   const [phase, setPhase] = useState<PairingPhase>({ kind: "connecting" });
+  const [retryCount, setRetryCount] = useState(0);
+  const phaseRef = useRef(phase);
+  const wakeRetryRef = useRef<(() => void) | null>(null);
+  phaseRef.current = phase;
   const locale = resolvePairingLocale();
   const copy = PAIRING_COPY[locale];
 
@@ -167,11 +172,7 @@ export function MobilePairingPage({
           // 断线只交给同一个页面的连接所有者；整页 reload 会清空工作区、草稿和订阅。
           (key) => {
             if (!handedOff) return;
-            if (CREDENTIAL_DEATH_KEYS.has(key))
-              clearStoredPairingCredential(
-                key === "revoked" ? undefined : roomId,
-                deviceCredential,
-              );
+            retirePairingCredentialOnFailure(key, roomId, deviceCredential);
             onDisconnected(key);
           },
         );
@@ -198,6 +199,8 @@ export function MobilePairingPage({
       // (room.ts:795-811),且 busy 不计失败(room.ts:289-295)——在截止时间内
       // 对 busy/网络类失败有界重试,避免移动端闪断直接落到终态失败页。
       const deadline = Date.now() + DATA_SOCKET_RETRY_DEADLINE_MS;
+      const retryDelay = createRetryDelay();
+      wakeRetryRef.current = retryDelay.wake;
       for (;;) {
         const result = await connectDataSocketOnce(roomId, deviceCredential);
         if (disposed || result.ok || !DATA_SOCKET_RETRY_KEYS.has(result.key)) {
@@ -206,7 +209,7 @@ export function MobilePairingPage({
         if (deadline - Date.now() <= DATA_SOCKET_RETRY_DELAY_MS) {
           return result;
         }
-        await new Promise((resolveDelay) => setTimeout(resolveDelay, DATA_SOCKET_RETRY_DELAY_MS));
+        await retryDelay.wait();
         if (disposed) {
           return result;
         }
@@ -227,11 +230,8 @@ export function MobilePairingPage({
           return;
         }
         if (CREDENTIAL_DEATH_KEYS.has(result.key)) {
-          // 凭据本身已死(吊销/鉴权失效):清掉本地凭据
-          clearStoredPairingCredential(
-            result.key === "revoked" ? undefined : stored.roomId,
-            stored.deviceCredential,
-          );
+          // 凭据本身已死(吊销/鉴权失效):只清掉这条匹配记录。
+          retirePairingCredentialOnFailure(result.key, stored.roomId, stored.deviceCredential);
         }
         if (
           !shouldFallbackToPairingCapability({
@@ -288,12 +288,7 @@ export function MobilePairingPage({
       });
       const result = await connectDataSocket(routeRoomId, outcome.deviceCredential);
       if (!disposed && !result.ok) {
-        if (CREDENTIAL_DEATH_KEYS.has(result.key)) {
-          clearStoredPairingCredential(
-            result.key === "revoked" ? undefined : routeRoomId,
-            outcome.deviceCredential,
-          );
-        }
+        retirePairingCredentialOnFailure(result.key, routeRoomId, outcome.deviceCredential);
         setPhase({ kind: "failed", key: result.key });
       }
     };
@@ -311,8 +306,27 @@ export function MobilePairingPage({
 
     return () => {
       disposed = true;
+      wakeRetryRef.current?.();
+      wakeRetryRef.current = null;
     };
-  }, [route, onConnected]);
+  }, [route, onConnected, onDisconnected, retryCount]);
+
+  useEffect(() => {
+    const recover = () => {
+      wakeRetryRef.current?.();
+      if (phaseRef.current.kind !== "failed" || !RETRYABLE_KEYS.has(phaseRef.current.key)) return;
+      setRetryCount((count) => count + 1);
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") recover();
+    };
+    window.addEventListener("online", recover);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("online", recover);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, []);
 
   if (phase.kind === "failed") {
     return (
@@ -332,7 +346,7 @@ export function MobilePairingPage({
           <button
             type="button"
             className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-ui-xs text-foreground-subtle hover:bg-surface-hover"
-            onClick={() => window.location.reload()}
+            onClick={() => setRetryCount((count) => count + 1)}
           >
             {copy.retry}
           </button>
