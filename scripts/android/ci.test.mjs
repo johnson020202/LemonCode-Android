@@ -167,6 +167,8 @@ test("mirror cold start, recovery and power policy keep their ownership boundari
   assert.ok(activity.includes("registerNetworkRecovery()"));
   assert.ok(activity.includes("NetworkCapabilities.NET_CAPABILITY_VALIDATED"));
   assert.ok(activity.includes("injectMirrorLivenessFallback"));
+  assert.ok(activity.includes("if (source != webView || !request.isForMainFrame()) return;"));
+  assert.match(activity, /scanButton\.setEnabled\(true\);\s+startRuntime\(\);/u);
   assert.doesNotMatch(activity, /(?<![\w*.\s])webView\.onPause\(\)/u);
   const keepAlive = await readFile(
     resolve(root, "apps/android/app/src/main/java/vin/lemon/android/MirrorKeepAliveService.java"),
@@ -175,6 +177,7 @@ test("mirror cold start, recovery and power policy keep their ownership boundari
   assert.match(keepAlive, /TICK_INTERVAL_MS = 30_000L/u);
   assert.match(keepAlive, /WAKELOCK_LEASE_MS = 10_000L/u);
   assert.ok(keepAlive.includes("power.isDeviceIdleMode()"));
+  assert.match(keepAlive, /static void pause\(Context context\) \{\s+\/\/[^\n]+\s+context\.stopService/u);
   assert.doesNotMatch(keepAlive, /4L \* 60L \* 60L/u);
   assert.doesNotMatch(keepAlive, /resumeTimers\(\)/u);
 });
