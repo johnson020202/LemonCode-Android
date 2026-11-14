@@ -1030,11 +1030,7 @@ public final class MainActivity extends Activity {
     }
 
     private void startScan() {
-        if (activeOrigin == null) {
-            toast(R.string.scan_runtime_not_ready);
-            startRuntime();
-            return;
-        }
+        // 扫码本身不需要本机 Node；仅收到会话复制结果时才检查真实端口。
         startActivityForResult(new Intent(this, ScanActivity.class), SCAN_REQUEST);
     }
 
