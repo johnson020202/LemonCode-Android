@@ -168,7 +168,18 @@ test("mirror cold start, recovery and power policy keep their ownership boundari
   assert.ok(activity.includes("NetworkCapabilities.NET_CAPABILITY_VALIDATED"));
   assert.ok(activity.includes("injectMirrorLivenessFallback"));
   assert.match(activity, /if \(mirrorSessionHost == null \|\| view == null\) \{\s+\/\/[^\n]+\s+networkAvailable = true;\s+return;\s+\}/u);
-  assert.ok(activity.includes("!networkAvailable && !hasWindowFocus()"));
+  assert.ok(activity.includes("if (hasWindowFocus()) MirrorKeepAliveService.stop(this);"));
+  const launch = activity.slice(activity.indexOf("private void launchRuntime(String initialUrl)"), activity.indexOf("private void startRuntime()"));
+  const recovery = activity.slice(activity.indexOf("private void recoverMirrorAfterNetworkChange()"), activity.indexOf("private void injectMirrorLivenessFallback("));
+  assert.doesNotMatch(launch, /MirrorKeepAliveService\.start\(/u, "foreground page creation must not schedule a foreground service");
+  assert.doesNotMatch(recovery, /MirrorKeepAliveService\.start\(/u, "network callbacks must never start a foreground service");
+  const pause = activity.slice(activity.indexOf("protected void onPause()"), activity.indexOf("protected void onStop()"));
+  assert.match(pause, /!isFinishing\(\) && webView != null && mirrorSessionHost != null/u);
+  assert.ok(pause.includes("MirrorKeepAliveService.start(this)"));
+  const stop = activity.slice(activity.indexOf("protected void onStop()"), activity.indexOf("protected void onResume()"));
+  assert.ok(stop.includes("!hasWindowFocus()"));
+  assert.ok(stop.includes("MirrorKeepAliveService.start(this)"));
+  assert.match(activity, /protected void onResume\(\) \{\s+super\.onResume\(\);\s+\/\/[^\n]+\s+MirrorKeepAliveService\.stop\(this\);/u);
   assert.ok(activity.includes("if (source != webView || !request.isForMainFrame()) return;"));
   assert.match(activity, /scanButton\.setEnabled\(true\);\s+startRuntime\(\);/u);
   assert.match(activity, /private void startScan\(\) \{\s+\/\/[^\n]+\s+startActivityForResult/u);
@@ -191,6 +202,10 @@ test("coexist build isolates package id, loopback port, test provider, and relea
   assert.ok(gradle.includes("PREFERRED_SERVER_PORT"));
   assert.ok(gradle.includes("UPDATE_ASSET_SUFFIX"));
   assert.ok(gradle.includes("OAUTH_SCHEME"));
+  assert.match(gradle, /ANDROID_VERSION_NAME'\)\.getOrElse\('0\.2\.1'\)/u);
+  const buildWeb = await readFile(resolve(root, "scripts/android/build-web.mjs"), "utf8");
+  assert.ok(buildWeb.includes('process.env.ANDROID_VERSION_NAME || "0.2.1"'));
+  assert.ok(buildWeb.includes('process.env.ANDROID_VERSION_CODE || "1"'));
 
   const testManifest = await readFile(
     resolve(root, "apps/android/app/src/androidTest/AndroidManifest.xml"),

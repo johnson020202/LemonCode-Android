@@ -18,6 +18,7 @@
 - 原生壳**不得调用 `WebView.onPause()`**：它会暂停 WebView 的 JS 定时器，导致后台 30s 心跳停摆，Worker 约 75s 回收桥槽，表现就是「切后台不到一分钟掉线」。
 - 镜像页退到后台时运行 `MirrorKeepAliveService`（`foregroundServiceType=connectedDevice`），按 30s 协议周期调用页面导出的 `window.__lcodeRemotePingTick`；该函数由 `pairingSockets.ts` 注册，指向当前活动桥接的同一个发送器，断开时与定时器一起摘除。前台页面自己调度，原生服务停止，不创建第二条 socket。
 - WakeLock 只在后台心跳发送/探活窗口短持，最长 10s 后释放；Doze 下停止 tick，不持续对抗系统休眠。回前台停止原生服务并调用页面探活，后台断网只停止服务，不能清除恢复地址或设备授权。
+- 首次 MIRROR 页面加载、扫码后页面进入前台及前台网络回调均不启动前台服务；2026-11-15 真机崩溃证实这些前台调用可能留下待执行的 `ForegroundServiceDidNotStartInTimeException`，后续重启即崩。补拍仅从已有 MIRROR WebView 退后台的边界启动，并且前台恢复与页面回收必须收掉它。
 - 切回本机工作区、销毁页面或退出应用都停止服务并清空注入目标，不能常驻耗电。
 - 回到前台或收到 `online` 时，已连接 socket 立即发探活；`reconnecting` 取消其被节流的等待并立即推进，`failed` 且持有有效设备凭据时直接恢复。唤醒只驱动同一连接所有者，不另建并行重试循环。
 

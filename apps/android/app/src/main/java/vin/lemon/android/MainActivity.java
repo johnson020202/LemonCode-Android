@@ -675,11 +675,9 @@ public final class MainActivity extends Activity {
         }
         pendingMirrorRecovery = null;
         // 只有镜像页需要后台保活：本机工作区的会话跑在手机内部，进程被杀不影响电脑。
-        if (mirrorSessionHost != null) {
-            MirrorKeepAliveService.start(this);
-        } else {
-            MirrorKeepAliveService.stop(this);
-        }
+        // 首次页面加载仍处于前台。补拍只由 onPause/onStop 的真实后台边界启动，
+        // 避免前台 startForegroundService 留下超时杀进程的待执行请求。
+        MirrorKeepAliveService.stop(this);
         WebView view = new WebView(this);
         webView = view;
         // 前台服务据此向镜像页推送心跳拍点；本机工作区不需要，置空即停止注入。
@@ -1258,7 +1256,8 @@ public final class MainActivity extends Activity {
             networkAvailable = true;
             return;
         }
-        if (!networkAvailable && !hasWindowFocus()) MirrorKeepAliveService.start(this);
+        // 前台断网后恢复只探活；后台补拍已由 onPause/onStop 负责，避免重复启动。
+        if (hasWindowFocus()) MirrorKeepAliveService.stop(this);
         networkAvailable = true;
         if (pendingMirrorRecovery != null && UrlPolicy.isInApp(activeOrigin, pendingMirrorRecovery)) {
             view.loadUrl(pendingMirrorRecovery);
@@ -1413,12 +1412,24 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() {
         // 不能调用 webView.onPause()：它会暂停 JS 定时器。后台由服务按协议周期补拍，
         // 而非每 5s 轮询或永久持锁；Doze 允许 Worker 回收连接，回前台原页面恢复。
-        if (webView != null && mirrorSessionHost != null) MirrorKeepAliveService.start(this);
+        if (!isFinishing() && webView != null && mirrorSessionHost != null) {
+            MirrorKeepAliveService.start(this);
+        }
         super.onPause();
+    }
+
+    @Override protected void onStop() {
+        // 页面创建后可能尚未获得窗口焦点就退后台，onStop 必须兜住这个边界。
+        if (webView != null && mirrorSessionHost != null && !hasWindowFocus()) {
+            MirrorKeepAliveService.start(this);
+        }
+        super.onStop();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        // 立刻结束前台可见页的后台服务，也取消尚未投递的补拍请求。
+        MirrorKeepAliveService.stop(this);
         WebView view = webView;
         if (view != null && mirrorSessionHost != null) {
             // 前台交给页面定时器，服务释放 WakeLock；恢复等待中的重连与 socket 探活。
