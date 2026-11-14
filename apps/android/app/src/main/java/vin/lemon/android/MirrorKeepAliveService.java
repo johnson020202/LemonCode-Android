@@ -16,7 +16,6 @@ import android.os.PowerManager;
 import android.webkit.WebView;
 
 import androidx.core.app.NotificationCompat;
-import androidx.core.content.ContextCompat;
 
 import java.lang.ref.WeakReference;
 
@@ -98,8 +97,9 @@ public final class MirrorKeepAliveService extends Service {
     }
 
     static void start(Context context) {
-        ContextCompat.startForegroundService(context,
-                new Intent(context, MirrorKeepAliveService.class));
+        // 仅在 onPause/onStop 仍可见的窗口内调用：普通启动不产生系统 FGS 超时请求，
+        // onStartCommand 同步提升为前台服务；快速返回时可直接停止，不会留下延时崩溃。
+        context.startService(new Intent(context, MirrorKeepAliveService.class));
     }
 
     static void stop(Context context) {
