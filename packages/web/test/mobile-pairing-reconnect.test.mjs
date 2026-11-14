@@ -133,8 +133,7 @@ async function createWorkerContext(browser, viewport) {
     }
     worker.sockets.push(socket);
     socket.onMessage((message) => {
-      if (message === '{"type":"mute-pong"}') worker.mutePong = true;
-      else if (message === '{"type":"ping"}' && !worker.mutePong) socket.send('{"type":"pong"}');
+      if (message === '{"type":"ping"}' && !worker.mutePong) socket.send('{"type":"pong"}');
     });
     if (!worker.holdBridge)
       socket.send(

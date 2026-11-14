@@ -16,8 +16,9 @@
 
 - 心跳的**唯一发送者**仍是页面内的 `connectBridgedDataSocket`（每 30s 一条 `{"type":"ping"}`，§3.4）；原生壳不新建第二条连接、不自己解析协议，只负责在后台替页面**补拍**。
 - 原生壳**不得调用 `WebView.onPause()`**：它会暂停 WebView 的 JS 定时器，导致后台 30s 心跳停摆，Worker 约 75s 回收桥槽，表现就是「切后台不到一分钟掉线」。
-- 镜像页打开期间运行 `MirrorKeepAliveService`（`foregroundServiceType=connectedDevice` + `PARTIAL_WAKE_LOCK`），每 20s 调用页面导出的 `window.__lcodeRemotePingTick`；该函数由 `pairingSockets.ts` 注册，指向当前活动桥接的同一个发送器，断开时与定时器一起摘除，避免把 ping 发到已关闭的套接字。
-- 前台服务只在镜像页存活：切回本机工作区、`disposeWebView()` 或退出应用都立即停止并清空注入目标，不常驻耗电。
+- 镜像页退到后台时运行 `MirrorKeepAliveService`（`foregroundServiceType=connectedDevice`），按 30s 协议周期调用页面导出的 `window.__lcodeRemotePingTick`；该函数由 `pairingSockets.ts` 注册，指向当前活动桥接的同一个发送器，断开时与定时器一起摘除。前台页面自己调度，原生服务停止，不创建第二条 socket。
+- WakeLock 只在后台心跳发送/探活窗口短持，最长 10s 后释放；Doze 下停止 tick，不持续对抗系统休眠。回前台停止原生服务并调用页面探活，后台断网只停止服务，不能清除恢复地址或设备授权。
+- 切回本机工作区、销毁页面或退出应用都停止服务并清空注入目标，不能常驻耗电。
 - 回到前台或收到 `online` 时，已连接 socket 立即发探活；`reconnecting` 取消其被节流的等待并立即推进，`failed` 且持有有效设备凭据时直接恢复。唤醒只驱动同一连接所有者，不另建并行重试循环。
 
 ## 半开连接与即时恢复（2026-11-14）

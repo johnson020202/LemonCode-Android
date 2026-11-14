@@ -57,7 +57,7 @@
    - **`DeviceSyncClient` JSON 安全序列化**：`importSnapshot` 原先用字符串拼接 `"{\"snapshot\":" + snapshotJson + "}"`，先用 `org.json.JSONTokener` / 轻量合法性校验确保 `snapshotJson` 为合法 JSON 对象后再发送，避免畸形快照构造出损坏请求体。
 
 3. **前台保活与扫码页健壮性（`MirrorKeepAliveService` / `ScanActivity` / `XiaomiFocus`）**
-   - **`MirrorKeepAliveService` 防泄漏与超时保护**：`WakeLock` 改用包名隔离 tag 并加设单次合理超时上限（如 4 小时并在活跃心跳时按需续期）防止极端异常永久锁死 CPU；若 `MainActivity` 已销毁且 `target` 连续丢失，自动收敛空转。
+   - **`MirrorKeepAliveService` 防泄漏与短锁**：`WakeLock` 使用包名隔离 tag，仅在后台心跳窗口持有，单次最多 10s 后主动释放（系统兜底 12s），不允许长期占锁；若 `target` 连续丢失约 3 分钟，自动停止空转服务。
    - **`ScanActivity` 生命周期与大图解码优化**：相机重绑与生命周期状态对齐（`onStop`/`onDestroy` 复位 `cameraBound` 以便从后台/设置页授完权限返回时可靠恢复预览）；相册选图使用 `Bitmap.Config.RGB_565` 降低一半解码内存占用。
    - **`XiaomiFocus` 反射缓存**：将 `SystemProperties.get` 的 `Method` 反射查找缓存为静态常量，避免每次通知更新重复反射查找类与方法。
 
@@ -65,7 +65,7 @@
    - **解除本机运行时前置依赖**：MIRROR 页面由 Worker 经 HTTPS 提供，不依赖本机 Node；启动时先恢复已保存的远控页面，本机运行时在后台并行准备。`local` 记录仍必须等待真实回环端口，未知回环地址、非 HTTPS 远控页和外部协议继续拒绝。
    - **恢复记录不被瞬时故障擦除**：主框架断网、切网或 WebView 渲染进程退出不等于用户取消配对，保留不含 capability 的 MIRROR 恢复记录；显式清除数据才清除全部记录。
    - **单一所有者与恢复顺序**：`MainActivity` 持有当前 WebView、`mirrorSessionHost`、待恢复 MIRROR URL 与 `NetworkCallback`；页面连接代际仍归 `MirrorSessionGate`，原生壳不另建 socket、不修改桌面房间状态。原生网络可用信号只触发重载或既有页面探活钩子。
-   - **后台与旧 Worker 兼容**：`MirrorKeepAliveService` 继续调用同一 socket 的心跳/探活入口，回前台恢复 JS 定时器；MIRROR 在主框架开始加载时注入幂等的入站活性 watchdog 与 `online`/`visibilitychange` 分发，使旧 Worker 页面也能淘汰半开 socket。不得以 APK 内置 HTML 替换 MIRROR 主框架，也不得调用 `WebView.onPause()`。
+   - **后台与旧 Worker 兼容**：`MirrorKeepAliveService` 继续调用同一 socket 的心跳/探活入口，回前台停止原生补拍服务；MIRROR 在主框架开始加载时尽早注入幂等的入站活性 watchdog 与 `online`/`visibilitychange` 分发，加载完成时再次确认，使旧 Worker 页面也能淘汰半开 socket。不得以 APK 内置 HTML 替换 MIRROR 主框架，也不得调用 `WebView.onPause()`。通知点击恢复已保存 MIRROR；显式重置完成后扫码入口立即可用。
    - **功耗与连续性的明确边界**：前台不持 WakeLock，页面按协议 30s 调度心跳，45s 无入站判死；后台仅心跳窗口短持锁，不运行 5s 轮询，也不唤醒整页渲染器。Doze 下停止主动对抗系统休眠，Worker 可回收旧 socket，但设备授权与恢复地址保留，回前台或已验证网络恢复时立即原页面重连。不能以“深睡仍同一条 socket”为由长期持有 WakeLock；实际电池消耗需真机测量。
    - **失败语义**：本机 Node 启动失败只影响本机工作区和会话复制，不销毁已打开的 MIRROR；远端 SSL/导航违规仍失败关闭。网络恢复由已验证的 Internet 网络回调驱动，页面失败恢复保留当前现场，不要求用户重新扫码。
 
