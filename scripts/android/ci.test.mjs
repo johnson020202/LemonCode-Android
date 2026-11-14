@@ -167,6 +167,8 @@ test("mirror cold start, recovery and power policy keep their ownership boundari
   assert.ok(activity.includes("registerNetworkRecovery()"));
   assert.ok(activity.includes("NetworkCapabilities.NET_CAPABILITY_VALIDATED"));
   assert.ok(activity.includes("injectMirrorLivenessFallback"));
+  assert.match(activity, /if \(mirrorSessionHost == null \|\| view == null\) \{\s+\/\/[^\n]+\s+networkAvailable = true;\s+return;\s+\}/u);
+  assert.ok(activity.includes("!networkAvailable && !hasWindowFocus()"));
   assert.ok(activity.includes("if (source != webView || !request.isForMainFrame()) return;"));
   assert.match(activity, /scanButton\.setEnabled\(true\);\s+startRuntime\(\);/u);
   assert.match(activity, /private void startScan\(\) \{\s+\/\/[^\n]+\s+startActivityForResult/u);
