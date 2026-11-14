@@ -77,16 +77,15 @@ final class LocalBridgePolicy {
     /**
      * 同上，但额外允许镜像页（远程控制）发送 {@code notify}。
      *
-     * <p>镜像页由 Worker 以 https 托管，来源不是本机回环，原实现一律拒绝，导致
-     * 「远控模式下的任务通知」永远到不了系统——而远控正是手机端的主要用法。
-     * 这里只对 {@code notify} 放开，且要求来源 host 与当前镜像会话 host 完全一致；
-     * 扫码、打开浏览器、主题、OAuth 等本地动作仍只认本机回环，避免远程页面驱动原生 UI。
+     * <p>镜像页由 Worker 以 HTTPS 托管，与本机 Node 是否就绪无关；只对
+     * {@code notify} 与 {@code theme} 放开，且要求来源和当前页面 host 完全一致。
+     * 扫码、打开浏览器、OAuth 等本地动作仍只认本机回环，避免远程页面驱动原生 UI。
      */
     static boolean allows(UrlPolicy.LocalOrigin origin, String command,
                           String pageUrl, String sourceOrigin, boolean isMainFrame,
                           String mirrorHost) {
-        if (!isMainFrame || origin == null || !isSupportedCommand(command)) return false;
-        if (isLocalSource(origin, sourceOrigin)) return origin.allows(pageUrl);
+        if (!isMainFrame || !isSupportedCommand(command)) return false;
+        if (origin != null && isLocalSource(origin, sourceOrigin)) return origin.allows(pageUrl);
         if (isMirrorSource(sourceOrigin, mirrorHost) && isMirrorPage(pageUrl, mirrorHost)) {
             // theme 也必须放行：远程控制页同样是深色界面，若它不能上报主题，
             // 原生只能退回系统 uiMode。系统浅色 + 页面深色时会给深色背景配深色

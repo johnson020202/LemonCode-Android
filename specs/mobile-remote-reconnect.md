@@ -6,7 +6,7 @@
 - `pairingCredentialStore` 是手机凭据唯一读写入口；版本化 localStorage 键为 `lcode:remote-pairing:device:v1`，仅保存 roomId、deviceId、deviceCredential、grantedAt。旧 lcode/zcode sessionStorage 记录迁移后移除；持久存储不可用时降级到当前标签页的 sessionStorage，不伪称能够跨关闭恢复。凭据不得写入日志、示例、HTTP fragment 之外的页面地址或构建产物。
 - 设备授权由桌面设备表与 Worker 哈希校验决定。网络闪断、心跳超时、busy、房间缺失/过期/作废与停止不等于设备撤销，不删除有效凭据；明确设备鉴权失败或吊销时清理对应记录及旧键，迟到失败不得清除新配对结果。
 - 已授权设备重连的网络/房间错误不能退回已使用的 capability。只有设备鉴权失败、链接指向不同房间且提供 capability 时允许完整新配对；同房间已配对的旧链接不得重放。
-- 未接管的建桥超时仍归当前配对页处理，不调用已接管镜像的整页重连监督者；连接已接管后才可刷新恢复，避免两个重试所有者互相打断。
+- 未接管的建桥超时仍归当前配对页处理，不调用已接管镜像的重连监督者；连接接管后仍由原页面按连接代际恢复，不整页刷新，避免两个重试所有者互相打断。
 - Main 是桌面连接状态唯一所有者。手机断连进入 `reconnecting`，不是配对失败；宽限内保留 attachment 并重发 Initialize，宽限外先停泵再 detach，之后已授权设备可建立新的 attachment。房间仍存活，镜像 target、owner/lease、workspaceIdentity 与 remoteSessionId 不变。
 - Worker 已桥接房间的 room.ready.expiresAt=null 表示没有配对 TTL；Main 与共享运行时校验必须接受该既有语义，不能恢复已消费的二维码。`reconnecting` 不显示二维码，不自动新建房间。
 - Desktop continuous 与手机 web-remote-replayable 继续使用已有 Host；此修复不另起 Agent，不放宽吊销、单房间桥槽或一次性链接校验。
@@ -18,7 +18,36 @@
 - 原生壳**不得调用 `WebView.onPause()`**：它会暂停 WebView 的 JS 定时器，导致后台 30s 心跳停摆，Worker 约 75s 回收桥槽，表现就是「切后台不到一分钟掉线」。
 - 镜像页打开期间运行 `MirrorKeepAliveService`（`foregroundServiceType=connectedDevice` + `PARTIAL_WAKE_LOCK`），每 20s 调用页面导出的 `window.__lcodeRemotePingTick`；该函数由 `pairingSockets.ts` 注册，指向当前活动桥接的同一个发送器，断开时与定时器一起摘除，避免把 ping 发到已关闭的套接字。
 - 前台服务只在镜像页存活：切回本机工作区、`disposeWebView()` 或退出应用都立即停止并清空注入目标，不常驻耗电。
-- 回到前台时若连接已落到 `failed`（后台节流把重试预算耗光），`MirrorSessionGate` 在 `visibilitychange` 直接复用设备凭据重新恢复，不要求用户手动点重试；`reconnecting` 不重复触发，避免两个重试所有者互相打断。
+- 回到前台或收到 `online` 时，已连接 socket 立即发探活；`reconnecting` 取消其被节流的等待并立即推进，`failed` 且持有有效设备凭据时直接恢复。唤醒只驱动同一连接所有者，不另建并行重试循环。
+
+## 半开连接与即时恢复（2026-11-14）
+
+- **入站活性是唯一判据**：每条数据 socket 自己记录最近一次任意入站消息时间；`ping` 的 `send()` 成功不代表对端可达。45s 无入站消息即按 `heartbeat` 淘汰半开 socket，唤醒/上线探活后 8s 无响应同样淘汰。`bridge.open`、pong 和应用帧都算活性证明，不要求只识别 pong。
+- **连接所有者**：`connectBridgedDataSocket` 仅拥有本条 socket 的发送、探活和 watchdog；`MirrorSessionGate` 是接管后连接代际与重试的唯一所有者，`MobilePairingPage` 只拥有接管前流程。全局原生钩子只指向最新活动连接，旧连接的清理不得误删新连接。
+- **恢复边界**：连接恢复只替换 RPC services，并通过既有 `generation` 重建 `Root`/`ChannelClient` 初始化握手；导航仍按 `navigationKey` 恢复，Host 仍提供 `web-remote-replayable` 快照。不重载 document，不新建第二套会话队列或远端 Agent。
+- **代际与取消**：每次重连获得新 generation；旧连接的迟到 close、超时与重试结果不得改变新状态。唤醒事件可取消当前重试 sleep 并立即执行，但不能让过期尝试重新接管页面。
+- **冷启动配对页**：可重试失败的“重试”在原页面重启状态机；网络恢复与可见性恢复自动重试可恢复错误。只有明确 `auth`/`revoked` 才经共享入口退休匹配的设备凭据，瞬时失败不得清除。
+
+```mermaid
+sequenceDiagram
+  participant A as Android 网络/生命周期
+  participant P as 当前 MIRROR 页面
+  participant G as MirrorSessionGate
+  participant W as Worker
+  A->>P: online / visible / 原生唤醒探活
+  alt 已有活动 socket
+    P->>W: 立即 ping
+    W-->>P: 任意入站帧
+    P->>P: 清除探活截止，刷新 lastInboundAt
+  else 半开或无入站响应
+    P->>P: 关闭 socket，heartbeat
+    P->>G: 当前 generation 断链
+    G->>W: 原设备凭据原页面重连
+  else 正在重试或已失败
+    A->>G: 唤醒当前所有者
+    G->>W: 立即推进重试或重新恢复
+  end
+```
 
 ## 所有者与事件顺序
 

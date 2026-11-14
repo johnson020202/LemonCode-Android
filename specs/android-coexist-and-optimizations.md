@@ -61,6 +61,14 @@
    - **`ScanActivity` 生命周期与大图解码优化**：相机重绑与生命周期状态对齐（`onStop`/`onDestroy` 复位 `cameraBound` 以便从后台/设置页授完权限返回时可靠恢复预览）；相册选图使用 `Bitmap.Config.RGB_565` 降低一半解码内存占用。
    - **`XiaomiFocus` 反射缓存**：将 `SystemProperties.get` 的 `Method` 反射查找缓存为静态常量，避免每次通知更新重复反射查找类与方法。
 
+4. **MIRROR 即时进入与断网恢复（`MainActivity` / `UrlPolicy` / `RestorablePage`）**
+   - **解除本机运行时前置依赖**：MIRROR 页面由 Worker 经 HTTPS 提供，不依赖本机 Node；启动时先恢复已保存的远控页面，本机运行时在后台并行准备。`local` 记录仍必须等待真实回环端口，未知回环地址、非 HTTPS 远控页和外部协议继续拒绝。
+   - **恢复记录不被瞬时故障擦除**：主框架断网、切网或 WebView 渲染进程退出不等于用户取消配对，保留不含 capability 的 MIRROR 恢复记录；显式清除数据才清除全部记录。
+   - **单一所有者与恢复顺序**：`MainActivity` 持有当前 WebView、`mirrorSessionHost`、待恢复 MIRROR URL 与 `NetworkCallback`；页面连接代际仍归 `MirrorSessionGate`，原生壳不另建 socket、不修改桌面房间状态。原生网络可用信号只触发重载或既有页面探活钩子。
+   - **后台与旧 Worker 兼容**：`MirrorKeepAliveService` 继续调用同一 socket 的心跳/探活入口，回前台恢复 JS 定时器；MIRROR 在主框架开始加载时注入幂等的入站活性 watchdog 与 `online`/`visibilitychange` 分发，使旧 Worker 页面也能淘汰半开 socket。不得以 APK 内置 HTML 替换 MIRROR 主框架，也不得调用 `WebView.onPause()`。
+   - **功耗与连续性的明确边界**：前台不持 WakeLock，页面按协议 30s 调度心跳，45s 无入站判死；后台仅心跳窗口短持锁，不运行 5s 轮询，也不唤醒整页渲染器。Doze 下停止主动对抗系统休眠，Worker 可回收旧 socket，但设备授权与恢复地址保留，回前台或已验证网络恢复时立即原页面重连。不能以“深睡仍同一条 socket”为由长期持有 WakeLock；实际电池消耗需真机测量。
+   - **失败语义**：本机 Node 启动失败只影响本机工作区和会话复制，不销毁已打开的 MIRROR；远端 SSL/导航违规仍失败关闭。网络恢复由已验证的 Internet 网络回调驱动，页面失败恢复保留当前现场，不要求用户重新扫码。
+
 ## 4. 验收判据
 
 1. `apps/android` 本地 `./gradlew testDebugUnitTest lintDebug assembleDebug` 全绿通过。

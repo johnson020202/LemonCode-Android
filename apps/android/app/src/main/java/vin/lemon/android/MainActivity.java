@@ -7,6 +7,10 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
@@ -70,6 +74,9 @@ public final class MainActivity extends Activity {
     /** 一次性弹窗 WebView 的回收时限：页面 window.open 后不导航也要释放。 */
     private static final long POPUP_PROBE_MS = 3000L;
     private static final int MAX_UPLOAD_FILES = 32;
+    private static final int MAX_MIME_TYPES = 32;
+    private static final String PROBE_SCRIPT =
+            "window.__lcodeRemoteWakeProbe&&window.__lcodeRemoteWakeProbe()";
 
     private SharedPreferences preferences;
     private View homePanel;
@@ -102,12 +109,17 @@ public final class MainActivity extends Activity {
     private int deliveredOAuthGeneration = -1;
     /** 页面代际：每次主框架导航自增，用于区分「同一回调在新页面上的合法重投」。 */
     private int pageGeneration;
+    private Button resumeMirrorButton;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    /** 原生壳仅持有待恢复地址；socket 代际仍归页面的 MirrorSessionGate。 */
+    private String pendingMirrorRecovery;
+    private boolean networkAvailable;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
-        // 仅恢复白名单页面；新运行时端口就绪后自动打开一次，失败则留在选择页。
+        // MIRROR 由 Worker 托管，不必等待本机 Node；local 记录仍等真实端口。
         pendingRestore = preferences.getString(LAST_PAGE, null);
         homePanel = findViewById(R.id.home_panel);
         webPanel = findViewById(R.id.web_panel);
@@ -117,6 +129,7 @@ public final class MainActivity extends Activity {
         connectButton = findViewById(R.id.connect);
         scanButton = findViewById(R.id.scan_sync);
         reconnectButton = findViewById(R.id.reconnect);
+        resumeMirrorButton = findViewById(R.id.resume_mirror);
         previousOrigin = findViewById(R.id.previous_address);
         loadProgress = findViewById(R.id.load_progress);
         // 排障通道：默认关闭。以 `--ez debug_webview true` 启动时打开 WebView 调试，
@@ -136,6 +149,10 @@ public final class MainActivity extends Activity {
         connectButton.setOnClickListener(view -> launchRuntime());
         scanButton.setOnClickListener(view -> startScan());
         reconnectButton.setOnClickListener(view -> launchRuntime());
+        resumeMirrorButton.setOnClickListener(view -> {
+            String saved = RestorablePage.restore(null, preferences.getString(LAST_PAGE, null));
+            if (saved != null) launchRuntime(saved);
+        });
         findViewById(R.id.forget).setOnClickListener(view -> confirmReset());
         version.setText(getString(R.string.version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
         findViewById(R.id.check_update).setOnClickListener(view -> checkForUpdates(true));
@@ -145,7 +162,14 @@ public final class MainActivity extends Activity {
                 this::agentLogFile));
         findViewById(R.id.notification_settings)
                 .setOnClickListener(view -> openNotificationSettings());
+        // 即开即连：本机 Node 的解包与启动不能阻塞已授权的远控页面。
+        String savedMirror = RestorablePage.restore(null, pendingRestore);
+        if (savedMirror != null) {
+            pendingRestore = null;
+            launchRuntime(savedMirror);
+        }
         startRuntime();
+        registerNetworkRecovery();
         // 启动即检查（含 6 小时间隔节流）；发现新版本弹出更新日志。
         autoCheckForUpdates();
         requestNotificationPermission();
@@ -510,8 +534,7 @@ public final class MainActivity extends Activity {
     private void startRuntime() {
         if (starter != null) return;
         connectButton.setEnabled(false);
-        scanButton.setEnabled(false);
-        status.setText(R.string.starting_runtime);
+        if (homePanel.getVisibility() == View.VISIBLE) status.setText(R.string.starting_runtime);
         starter = new Thread(() -> {
             try {
                 File root = AndroidRuntime.prepare(this);
@@ -527,6 +550,12 @@ public final class MainActivity extends Activity {
                     previousOrigin.setText(getString(R.string.local_origin, activeOrigin.origin()));
                     status.setText(R.string.runtime_ready);
                     starter = null;
+                    updateHomeActions();
+                    // 远控已打开时仅初始化本机能力，不能覆盖用户的工作现场。
+                    if (mirrorSessionHost != null) {
+                        pendingRestore = null;
+                        return;
+                    }
                     // 首次使用仍停留选择页；只有此前确实进入过工作区才恢复一次。
                     if (pendingRestore != null) {
                         String target = RestorablePage.restore(activeOrigin, pendingRestore);
@@ -541,7 +570,12 @@ public final class MainActivity extends Activity {
                     if (isFinishing() || isDestroyed()) return;
                     starter = null;
                     connectButton.setEnabled(true);
-                    status.setText(getString(R.string.runtime_failed, message));
+                    if (mirrorSessionHost == null) {
+                        status.setText(getString(R.string.runtime_failed, message));
+                    } else {
+                        // 本机能力降级不应拆除由 Worker 托管的远控会话。
+                        android.util.Log.w("LemonCodeRuntime", "local runtime unavailable", exception);
+                    }
                 });
             }
         }, "lcode-runtime-start");
@@ -569,11 +603,12 @@ public final class MainActivity extends Activity {
      */
     @SuppressLint("SetJavaScriptEnabled")
     private void launchRuntime(String initialUrl) {
-        if (activeOrigin == null) {
+        UrlPolicy.LocalOrigin origin = activeOrigin;
+        if (origin == null && (initialUrl == null
+                || UrlPolicy.localNavigation(null, initialUrl) != UrlPolicy.Navigation.MIRROR)) {
             startRuntime();
             return;
         }
-        UrlPolicy.LocalOrigin origin = activeOrigin;
         String target = initialUrl == null ? origin.launchUrl() : initialUrl;
         if (!UrlPolicy.isInApp(origin, target)) {
             toast(R.string.navigation_blocked);
@@ -591,9 +626,11 @@ public final class MainActivity extends Activity {
             } catch (java.net.URISyntaxException ignored) {
                 mirrorSessionHost = null;
             }
-        } else if (initialUrl == null) {
+        } else {
+            // 本机工作或外部页面都不能沿用旧 MIRROR 的 host 白名单。
             mirrorSessionHost = null;
         }
+        pendingMirrorRecovery = null;
         // 只有镜像页需要后台保活：本机工作区的会话跑在手机内部，进程被杀不影响电脑。
         if (mirrorSessionHost != null) {
             MirrorKeepAliveService.start(this);
@@ -623,16 +660,18 @@ public final class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, false);
         // 本地运行时已由应用自己启动；Service Worker 不作为额外的代码加载通道。
-        ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setAllowContentAccess(false);
-        ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setAllowFileAccess(false);
-        ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setBlockNetworkLoads(false);
+        android.webkit.ServiceWorkerWebSettings serviceWorkerSettings =
+                ServiceWorkerController.getInstance().getServiceWorkerWebSettings();
+        serviceWorkerSettings.setAllowContentAccess(false);
+        serviceWorkerSettings.setAllowFileAccess(false);
+        serviceWorkerSettings.setBlockNetworkLoads(false);
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             // 镜像页（远程控制）由 Worker 以 https 托管，来源不是本机回环；只注册本机
             // origin 会让该页面拿不到 window.lemonAndroid，任务通知在远控模式下永远发不出去。
             // 这里把镜像 host 也注册进白名单，由 LocalBridgePolicy 逐条命令再校验：
             // 只有 notify 允许来自镜像页，扫码/打开浏览器/主题等仍限本机。
             java.util.Set<String> bridgeOrigins = new java.util.LinkedHashSet<>();
-            bridgeOrigins.add(origin.origin());
+            if (origin != null) bridgeOrigins.add(origin.origin());
             if (mirrorSessionHost != null) bridgeOrigins.add("https://" + mirrorSessionHost);
             WebViewCompat.addWebMessageListener(view, "lemonAndroid",
                     bridgeOrigins,
@@ -665,7 +704,8 @@ public final class MainActivity extends Activity {
                 String scheme = request.getUrl().getScheme();
                 if ("http".equalsIgnoreCase(scheme) || "file".equalsIgnoreCase(scheme)
                         || "content".equalsIgnoreCase(scheme)) {
-                    if (request.isForMainFrame() && !origin.allows(request.getUrl().toString())) {
+                    if (request.isForMainFrame()
+                            && (origin == null || !origin.allows(request.getUrl().toString()))) {
                         return errorResponse(403, "Forbidden");
                     }
                 }
@@ -686,6 +726,11 @@ public final class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView source, String url, android.graphics.Bitmap icon) {
                 if (source != webView) return;
+                if (mirrorSessionHost != null && UrlPolicy.localNavigation(origin, url)
+                        == UrlPolicy.Navigation.MIRROR) {
+                    // 在页面脚本创建 WebSocket 前包装；onPageFinished 注入已来不及。
+                    injectMirrorLivenessFallback(source);
+                }
                 // 新页面等于新 JS 上下文：允许同一条回调在这个页面上重新投递。
                 pageGeneration += 1;
                 if (!UrlPolicy.isInApp(origin, url)) {
@@ -708,7 +753,11 @@ public final class MainActivity extends Activity {
                 // 压在详情区上。这次对准该构建里真实存在的两个类：导航列
                 // `provider-settings:block` 与栅格 `provider-settings:grid-cols-[...]`，
                 // 同时补上列宽，可见性与不重叠一起满足。
-                if (mirrorSessionHost != null) injectMirrorNarrowLayoutFix(source);
+                if (mirrorSessionHost != null) {
+                    injectMirrorNarrowLayoutFix(source);
+                    injectMirrorLivenessFallback(source);
+                    pendingMirrorRecovery = null;
+                }
                 // 冷启动时先到的授权回调在这里补发一次。
                 deliverOAuthCallback();
             }
@@ -720,10 +769,31 @@ public final class MainActivity extends Activity {
 
             @Override public void onReceivedError(
                     WebView source, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) failSession(source, R.string.connection_error);
+                if (!request.isForMainFrame()) return;
+                // 电梯/飞行模式/切网不是取消配对；保留 URL 与 LAST_PAGE，联网后原地恢复。
+                if (mirrorSessionHost != null && UrlPolicy.localNavigation(origin,
+                        request.getUrl().toString()) == UrlPolicy.Navigation.MIRROR) {
+                    rememberPage(request.getUrl().toString());
+                    pendingMirrorRecovery = request.getUrl().toString();
+                    toast(R.string.mirror_offline);
+                    return;
+                }
+                failSession(source, R.string.connection_error);
             }
 
             @Override public boolean onRenderProcessGone(WebView source, RenderProcessGoneDetail detail) {
+                if (mirrorSessionHost != null && source.getUrl() != null) {
+                    pendingMirrorRecovery = source.getUrl();
+                    rememberPage(pendingMirrorRecovery);
+                    source.post(() -> {
+                        if (webView == source && pendingMirrorRecovery != null) {
+                            String target = pendingMirrorRecovery;
+                            disposeWebView();
+                            launchRuntime(target);
+                        }
+                    });
+                    return true;
+                }
                 failSession(source, R.string.renderer_failed);
                 return true;
             }
@@ -1040,7 +1110,7 @@ public final class MainActivity extends Activity {
                 }
             }
         }
-        if (!mimeTypes.isEmpty() && mimeTypes.size() <= 32) {
+        if (!mimeTypes.isEmpty() && mimeTypes.size() <= MAX_MIME_TYPES) {
             intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toArray(new String[0]));
         }
         try {
@@ -1104,6 +1174,107 @@ public final class MainActivity extends Activity {
         fileOwner = null;
     }
 
+    private void updateHomeActions() {
+        scanButton.setEnabled(true);
+        resumeMirrorButton.setVisibility(
+                RestorablePage.restore(null, preferences.getString(LAST_PAGE, null)) == null
+                        ? View.GONE : View.VISIBLE);
+    }
+
+    /** 网络信号只驱动既有页面，不在原生层建立第二条 socket。 */
+    private void registerNetworkRecovery() {
+        ConnectivityManager manager = getSystemService(ConnectivityManager.class);
+        if (manager == null || networkCallback != null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override public void onAvailable(Network network) {
+                runOnUiThread(MainActivity.this::recoverMirrorAfterNetworkChange);
+            }
+
+            @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                    runOnUiThread(MainActivity.this::recoverMirrorAfterNetworkChange);
+                }
+            }
+
+            @Override public void onLost(Network network) {
+                runOnUiThread(() -> {
+                    networkAvailable = false;
+                    MirrorKeepAliveService.pause(MainActivity.this);
+                });
+            }
+        };
+        try {
+            manager.registerNetworkCallback(new NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), networkCallback);
+        } catch (RuntimeException ignored) {
+            // ROM 拒绝注册时仍可依靠 onResume 与页面 online 事件恢复。
+        }
+    }
+
+    private void recoverMirrorAfterNetworkChange() {
+        if (!networkAvailable) MirrorKeepAliveService.start(this);
+        networkAvailable = true;
+        WebView view = webView;
+        if (mirrorSessionHost == null || view == null) return;
+        if (pendingMirrorRecovery != null && UrlPolicy.isInApp(activeOrigin, pendingMirrorRecovery)) {
+            view.loadUrl(pendingMirrorRecovery);
+        } else {
+            view.evaluateJavascript(PROBE_SCRIPT, null);
+        }
+    }
+
+    /**
+     * 旧 Worker 页面兼容：仅包装本页 WebSocket 的入站活性，不读取或改写业务帧。
+     * 新版 pairingSockets 导出探活钩子后，原生壳直接走该规范实现。
+     */
+    private void injectMirrorLivenessFallback(WebView view) {
+        String script = "(function(){"
+                + "if(window.__lcodeRemoteWakeProbe)return;"
+                + "var items=[];"
+                + "function clearTimer(s){if(s.timer!==null){clearTimeout(s.timer);s.timer=null;}}"
+                + "function expire(s){clearTimer(s);"
+                + "try{s.ws.close(4001,'heartbeat');}catch(e){}}"
+                + "function schedule(s){clearTimer(s);if(s.ws.readyState!==1)return;"
+                + "var now=Date.now();var delay=Math.max(250,Math.min(s.inbound+30000,s.inbound+45000)-now);"
+                + "s.timer=setTimeout(function(){s.timer=null;if(s.ws.readyState!==1)return;"
+                + "var at=Date.now();if(at-s.inbound>=45000){expire(s);return;}"
+                + "try{s.ws.send('{\"type\":\"ping\"}');}catch(e){}schedule(s);},delay);}"
+                + "function probe(){var now=Date.now();"
+                + "for(var i=items.length-1;i>=0;i--){var s=items[i];"
+                + "if(s.ws.readyState>1){clearTimer(s);items.splice(i,1);continue;}"
+                + "if(s.ws.readyState!==1)continue;"
+                + "if(now-s.inbound>=45000||s.probeAt&&now-s.probeAt>=8000){"
+                + "expire(s);items.splice(i,1);continue;}"
+                + "try{s.ws.send('{\"type\":\"ping\"}');s.probeAt=now;}catch(e){}"
+                + "clearTimer(s);s.timer=setTimeout(function(){"
+                + "if(s.probeAt&&Date.now()-s.probeAt>=8000)expire(s);else schedule(s);},8050);}}"
+                + "window.__lcodeRemoteWakeProbe=probe;"
+                + "window.__lcodeRemotePingTick=probe;"
+                + "window.addEventListener('online',probe);"
+                + "document.addEventListener('visibilitychange',function(){"
+                + "if(document.visibilityState==='visible')probe();});"
+                + "var NativeWebSocket=window.WebSocket;"
+                + "function TrackedWebSocket(url,protocols){"
+                + "var ws=protocols===undefined?new NativeWebSocket(url):new NativeWebSocket(url,protocols);"
+                + "var item={ws:ws,inbound:Date.now(),probeAt:0,timer:null};items.push(item);"
+                + "ws.addEventListener('message',function(){item.inbound=Date.now();item.probeAt=0;schedule(item);});"
+                + "ws.addEventListener('open',function(){schedule(item);});"
+                + "return ws;}"
+                + "TrackedWebSocket.prototype=NativeWebSocket.prototype;"
+                + "TrackedWebSocket.CONNECTING=NativeWebSocket.CONNECTING;"
+                + "TrackedWebSocket.OPEN=NativeWebSocket.OPEN;"
+                + "TrackedWebSocket.CLOSING=NativeWebSocket.CLOSING;"
+                + "TrackedWebSocket.CLOSED=NativeWebSocket.CLOSED;"
+                + "window.WebSocket=TrackedWebSocket;"
+                + "})();";
+        try {
+            view.evaluateJavascript(script, null);
+        } catch (RuntimeException ignored) {
+            // 页面正在销毁：下一次 onPageFinished 重新注入。
+        }
+    }
+
     private void failSession(WebView source, int message) {
         runOnUiThread(() -> {
             if (!isDestroyed() && webView == source) {
@@ -1116,7 +1287,8 @@ public final class MainActivity extends Activity {
     private void showHome() {
         if (prompt != null) prompt.dismiss();
         pendingRestore = null;
-        preferences.edit().remove(LAST_PAGE).apply();
+        pendingMirrorRecovery = null;
+        // 返回首页不是取消配对，保留 MIRROR 地址供「恢复上次远控」使用。
         // 回首页可能发生在镜像页加载失败或渲染进程崩溃时：这里必须一并收掉保活服务，
         // 否则会留下常驻通知与 WakeLock，用户已离开远控却仍以为连接在保持。
         mirrorSessionHost = null;
@@ -1124,6 +1296,7 @@ public final class MainActivity extends Activity {
         disposeWebView();
         webPanel.setVisibility(View.GONE);
         homePanel.setVisibility(View.VISIBLE);
+        updateHomeActions();
         status.setText(activeOrigin == null ? R.string.runtime_failed_hint : R.string.runtime_ready);
     }
 
@@ -1131,6 +1304,7 @@ public final class MainActivity extends Activity {
         String record = RestorablePage.capture(activeOrigin, url);
         if (record == null) return;
         preferences.edit().putString(LAST_PAGE, record).apply();
+        updateHomeActions();
     }
 
     private void disposeWebView() {
@@ -1230,14 +1404,21 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onPause() {
-        // 不能调用 webView.onPause()：它会暂停 WebView 的 JS 定时器，而手机远控的心跳正是
-        // 页面里每 30s 一次的 setInterval。暂停后 Worker 约 75s 收不到 ping 就会关桥，
-        // 表现就是「切到后台不到一分钟掉线」。后台保活改由 MirrorKeepAliveService 承担。
+        // 不能调用 webView.onPause()：它会暂停 JS 定时器。后台由服务按协议周期补拍，
+        // 而非每 5s 轮询或永久持锁；Doze 允许 Worker 回收连接，回前台原页面恢复。
+        if (webView != null && mirrorSessionHost != null) MirrorKeepAliveService.start(this);
         super.onPause();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        WebView view = webView;
+        if (view != null && mirrorSessionHost != null) {
+            // 前台交给页面定时器，服务释放 WakeLock；恢复等待中的重连与 socket 探活。
+            MirrorKeepAliveService.pause(this);
+            view.resumeTimers();
+            view.evaluateJavascript(PROBE_SCRIPT, null);
+        }
         // 回前台也检查一次（同样受 6 小时间隔约束），不必让用户专门跑回首页点按钮。
         autoCheckForUpdates();
     }
@@ -1246,6 +1427,14 @@ public final class MainActivity extends Activity {
         if (prompt != null) prompt.dismiss();
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null) {
             getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+        }
+        if (networkCallback != null) {
+            try {
+                getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networkCallback);
+            } catch (RuntimeException ignored) {
+                // Activity 销毁时网络服务可能已不可用。
+            }
+            networkCallback = null;
         }
         mirrorSessionHost = null;
         MirrorKeepAliveService.stop(this);

@@ -12,8 +12,8 @@ public final class RestorablePage {
 
     /** 返回持久化值；null 表示当前页面不应自动恢复。 */
     public static String capture(UrlPolicy.LocalOrigin origin, String value) {
-        if (origin == null || value == null) return null;
-        if (origin.allows(value)) return "local";
+        if (value == null) return null;
+        if (origin != null && origin.allows(value)) return "local";
         if (UrlPolicy.localNavigation(origin, value) != UrlPolicy.Navigation.MIRROR) return null;
         try {
             URI uri = new URI(value);
@@ -28,10 +28,10 @@ public final class RestorablePage {
         }
     }
 
-    /** 将记录绑定到本次运行的实际本机端口；非法记录返回 null。 */
+    /** local 绑定到实际本机端口；MIRROR 独立于本机运行时，可在启动时直接恢复。 */
     public static String restore(UrlPolicy.LocalOrigin origin, String record) {
-        if (origin == null || record == null) return null;
-        if ("local".equals(record)) return origin.launchUrl();
+        if (record == null) return null;
+        if ("local".equals(record)) return origin == null ? null : origin.launchUrl();
         if (!record.startsWith("https://")) return null;
         return UrlPolicy.localNavigation(origin, record) == UrlPolicy.Navigation.MIRROR
                 ? record : null;

@@ -37,8 +37,9 @@ final class Diagnostics {
             Pattern.compile("(?i)(bearer\\s+)[A-Za-z0-9._\\-]{8,}");
     private static final Pattern TOKEN_PREFIX_PATTERN =
             Pattern.compile("\\b(?:sk-ant-|sk-proj-|sk-|wb-|ghp_|github_pat_)[A-Za-z0-9_\\-]{8,}");
+    // sk-/wb-/ghp_/github_pat_ 已由上一条覆盖，避免同一命中重复替换。
     private static final Pattern LEGACY_TOKEN_PATTERN =
-            Pattern.compile("\\b(sk|wb|ghp|github_pat)_[A-Za-z0-9_\\-]{8,}");
+            Pattern.compile("\\b(?:npm_|pypi-)[A-Za-z0-9_\\-]{8,}");
     private static final Pattern KV_SECRET_PATTERN =
             Pattern.compile("(?i)(\"?(?:api[_-]?key|authorization|access_token|refresh_token|deviceCredential|client_secret)\"?\\s*[:=]\\s*\"?)[^\",\\s&]{8,}");
     private static final Pattern QUERY_SECRET_PATTERN =
@@ -99,38 +100,30 @@ final class Diagnostics {
         return result;
     }
 
+    private static String sendTelegramNow(String botToken, String chatId, String payload)
+            throws IOException {
+        if (botToken == null || botToken.trim().isEmpty() || chatId == null || chatId.trim().isEmpty()) {
+            throw new IOException("请先填写 Bot Token 与 Chat ID");
+        }
+        String url = "https://api.telegram.org/bot" + botToken.trim() + "/sendDocument";
+        byte[] body = multipartBytes(chatId.trim(), payload);
+        String response = postBytes(url, body, "multipart/form-data; boundary=" + BOUNDARY);
+        if (!response.contains("\"ok\":true")) {
+            throw new IOException("Telegram 返回失败：" + truncate(response, 160));
+        }
+        return "已发送到 Telegram";
+    }
+
     /** 通过 Telegram Bot API 发送（用户自己的 bot + chatId）。 */
     static void sendTelegram(Activity activity, String botToken, String chatId,
                              String payload, Callback callback) {
-        run(activity, () -> {
-            if (botToken == null || botToken.trim().isEmpty() || chatId == null || chatId.trim().isEmpty()) {
-                throw new IOException("请先填写 Bot Token 与 Chat ID");
-            }
-            String url = "https://api.telegram.org/bot" + botToken.trim() + "/sendDocument";
-            byte[] body = multipartBytes(chatId.trim(), payload);
-            String response = postBytes(url, body, "multipart/form-data; boundary=" + BOUNDARY);
-            if (!response.contains("\"ok\":true")) {
-                throw new IOException("Telegram 返回失败：" + truncate(response, 160));
-            }
-            return "已发送到 Telegram";
-        }, callback);
+        run(activity, () -> sendTelegramNow(botToken, chatId, payload), callback);
     }
 
     static void sendTelegram(Activity activity, String botToken, String chatId,
                              File runtimeLog, Supplier<File> agentLogSupplier, Callback callback) {
-        run(activity, () -> {
-            if (botToken == null || botToken.trim().isEmpty() || chatId == null || chatId.trim().isEmpty()) {
-                throw new IOException("请先填写 Bot Token 与 Chat ID");
-            }
-            String payload = collect(runtimeLog, agentLogSupplier.get());
-            String url = "https://api.telegram.org/bot" + botToken.trim() + "/sendDocument";
-            byte[] body = multipartBytes(chatId.trim(), payload);
-            String response = postBytes(url, body, "multipart/form-data; boundary=" + BOUNDARY);
-            if (!response.contains("\"ok\":true")) {
-                throw new IOException("Telegram 返回失败：" + truncate(response, 160));
-            }
-            return "已发送到 Telegram";
-        }, callback);
+        run(activity, () -> sendTelegramNow(botToken, chatId,
+                collect(runtimeLog, agentLogSupplier.get())), callback);
     }
 
     /** 通过用户自建 HTTP 端点发送（POST，正文为压缩后的文本）。 */

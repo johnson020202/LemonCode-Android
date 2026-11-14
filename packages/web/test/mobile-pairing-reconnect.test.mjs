@@ -87,8 +87,10 @@ async function createWorkerContext(browser, viewport) {
     revoked: false,
     busy: false,
     holdBridge: false,
+    mutePong: false,
     pairCalls: 0,
     dataCalls: 0,
+    secondData: Promise.withResolvers(),
     sockets: [],
   };
   await context.addInitScript(() => {
@@ -120,6 +122,7 @@ async function createWorkerContext(browser, viewport) {
       return;
     }
     worker.dataCalls += 1;
+    if (worker.dataCalls === 2) worker.secondData.resolve();
     if (worker.revoked || target.searchParams.get("auth") !== CREDENTIAL) {
       socket.close({ code: 4002, reason: "device credential rejected" });
       return;
@@ -130,7 +133,8 @@ async function createWorkerContext(browser, viewport) {
     }
     worker.sockets.push(socket);
     socket.onMessage((message) => {
-      if (message === '{"type":"ping"}') socket.send('{"type":"pong"}');
+      if (message === '{"type":"mute-pong"}') worker.mutePong = true;
+      else if (message === '{"type":"ping"}' && !worker.mutePong) socket.send('{"type":"pong"}');
     });
     if (!worker.holdBridge)
       socket.send(
@@ -242,6 +246,25 @@ test("手机远控：关闭页面、后台断连与网络重试不重放配对�
       await context.close();
     }
   });
+  await t.test("半开 socket 无入站 pong 时主动淘汰并原页面恢复", async () => {
+    const { context, worker } = await createWorkerContext(browser, { width: 390, height: 844 });
+    try {
+      const page = await context.newPage();
+      await page.goto(url);
+      await connected(page);
+      worker.mutePong = true;
+      await page.evaluate(() => globalThis.__lcodeRemotePingTick?.());
+      // 真实等待 8s 探活窗口；虚拟时钟无法快进真实 socket 状态机。
+      await worker.secondData.promise;
+      await connected(page);
+      assert.equal(worker.pairCalls, 1);
+      assert.equal(worker.dataCalls, 2);
+      assert.equal(await page.evaluate(() => performance.getEntriesByType("navigation").length), 1);
+    } finally {
+      await context.close();
+    }
+  });
+
   await t.test("busy 重试截止只显示忙碌，不回退已消费 capability", async () => {
     const { context, worker } = await createWorkerContext(browser, { width: 390, height: 844 });
     try {

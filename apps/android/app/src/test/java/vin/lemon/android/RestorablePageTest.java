@@ -22,5 +22,10 @@ public final class RestorablePageTest {
         assertNull(RestorablePage.capture(LOCAL, "https://example.com/docs"));
         assertNull(RestorablePage.capture(LOCAL, "https://code.lemon.vin/p/short#c=secret"));
         assertNull(RestorablePage.restore(LOCAL, "javascript:alert(1)"));
+        assertEquals(record, RestorablePage.capture(null,
+                "https://code.lemon.vin/p/abcdefgh#c=secret-capability"));
+        assertEquals(record, RestorablePage.restore(null, record));
+        // local 不能绑定到猜测的端口，必须等本机运行时确认实际 origin。
+        assertNull(RestorablePage.restore(null, "local"));
     }
 }

@@ -35,6 +35,8 @@
     <string name="sync_unreachable">连不上电脑，请确认手机和电脑在同一局域网。</string>
     <string name="sync_failed">同步失败，未写入手机。请重新扫码。</string>
     <string name="reconnect">重新打开本机工作区</string>
+    <string name="resume_mirror">恢复上次远程控制</string>
+    <string name="mirror_offline">网络暂不可用，已保留远控页面；联网后自动恢复。</string>
     <string name="no_previous">首次启动会自动准备本机运行时</string>
     <string name="checking_bundle">正在检查内置运行时…</string>
     <string name="bundle_missing">内置运行时缺失，请重新安装 APK。</string>

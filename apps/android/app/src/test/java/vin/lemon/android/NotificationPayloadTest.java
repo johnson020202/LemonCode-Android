@@ -70,5 +70,17 @@ public final class NotificationPayloadTest {
                 "http://127.0.0.1:31234/", "http://127.0.0.1:31234", true));
         assertFalse(LocalBridgePolicy.allows(LOCAL, "notify",
                 "http://127.0.0.1:31234/", "http://127.0.0.1:31234", false));
+        assertTrue(LocalBridgePolicy.allows(null, "notify",
+                "https://code.lemon.vin/p/abcdefgh", "https://code.lemon.vin", true,
+                "code.lemon.vin"));
+        assertTrue(LocalBridgePolicy.allows(null, "theme",
+                "https://code.lemon.vin/p/abcdefgh", "https://code.lemon.vin", true,
+                "code.lemon.vin"));
+        assertFalse(LocalBridgePolicy.allows(null, "scan",
+                "https://code.lemon.vin/p/abcdefgh", "https://code.lemon.vin", true,
+                "code.lemon.vin"));
+        assertFalse(LocalBridgePolicy.allows(null, "notify",
+                "https://evil.example/p/abcdefgh", "https://evil.example", true,
+                "code.lemon.vin"));
     }
 }

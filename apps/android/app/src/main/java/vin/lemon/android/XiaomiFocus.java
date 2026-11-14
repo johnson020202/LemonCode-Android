@@ -19,8 +19,9 @@ import org.json.JSONObject;
  *   <li>通道二 miui.focus.param。需要系统焦点协议 ≥1 且本应用被授予焦点通知权限，
  *       才能自定义大岛/小岛/息屏文案。授权由小米审核发放，侧载包拿不到；</li>
  * </ul>
- * 因此这里的模板只在 {@link #allowed} 为真时才附加，未授权时什么都不做，
- * 既不会污染普通通知，也不影响通道一。
+ * 通道一不需要小米授权；通道二的模板始终附加，但声明
+ * {@code filterWhenNoPermission=false}，未授权时由系统退化为普通通知。
+ * 不在应用内增加授权死锁门禁，系统设置中的焦点通知开关需由通知触发展示。
  *
  * <p>参数格式与字节上限取自小米官方《超级岛开发指南》与社区真机验证实现
  * （HyperOS 4.0 / Android 17）。
@@ -105,12 +106,6 @@ final class XiaomiFocus {
             cached = false;
         }
         return cached;
-    }
-
-    /** 通道二是否可用：机型支持岛 + 协议达标 + 应用已被放行。 */
-    static boolean allowed(Context context) {
-        return isXiaomi() && hasIsland() && focusProtocol(context) >= 1
-                && canShowFocus(context);
     }
 
     /** 一句话诊断，供首页与日志排查。 */

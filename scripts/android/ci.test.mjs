@@ -158,6 +158,27 @@ test("in-app updater ships safe versioning, checksums and FileProvider install",
   assert.ok(version.includes("isNewer"), "numeric version compare, not string compare");
 });
 
+test("mirror cold start, recovery and power policy keep their ownership boundaries", async () => {
+  const activity = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/MainActivity.java"),
+    "utf8",
+  );
+  assert.ok(activity.includes("RestorablePage.restore(null, pendingRestore)"));
+  assert.ok(activity.includes("registerNetworkRecovery()"));
+  assert.ok(activity.includes("NetworkCapabilities.NET_CAPABILITY_VALIDATED"));
+  assert.ok(activity.includes("injectMirrorLivenessFallback"));
+  assert.doesNotMatch(activity, /(?<![\w*.\s])webView\.onPause\(\)/u);
+  const keepAlive = await readFile(
+    resolve(root, "apps/android/app/src/main/java/vin/lemon/android/MirrorKeepAliveService.java"),
+    "utf8",
+  );
+  assert.match(keepAlive, /TICK_INTERVAL_MS = 30_000L/u);
+  assert.match(keepAlive, /WAKELOCK_LEASE_MS = 10_000L/u);
+  assert.ok(keepAlive.includes("power.isDeviceIdleMode()"));
+  assert.doesNotMatch(keepAlive, /4L \* 60L \* 60L/u);
+  assert.doesNotMatch(keepAlive, /resumeTimers\(\)/u);
+});
+
 test("coexist build isolates package id, loopback port, test provider, and release updater suffix", async () => {
   const gradle = await readFile(resolve(root, "apps/android/app/build.gradle"), "utf8");
   assert.match(gradle, /vin\.lemon\.android\.plus/u);
