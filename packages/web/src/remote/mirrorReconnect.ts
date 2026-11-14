@@ -1,7 +1,19 @@
+import { clearStoredPairingCredential } from "./pairingCredentialStore.js";
 import type { PairingFailureKey } from "./pairingFrames.js";
 
 /** 房间关闭不撤销设备；只有设备鉴权失败或明确吊销才退休本地凭据。 */
 export const CREDENTIAL_DEATH_KEYS: ReadonlySet<PairingFailureKey> = new Set(["auth", "revoked"]);
+
+/** 迟到的失败也按房间与凭据匹配，不会清除另一房间的新授权。 */
+export function retirePairingCredentialOnFailure(
+  key: PairingFailureKey,
+  roomId: string,
+  credential: string,
+): boolean {
+  if (!CREDENTIAL_DEATH_KEYS.has(key)) return false;
+  clearStoredPairingCredential(key === "revoked" ? undefined : roomId, credential);
+  return true;
+}
 
 export function shouldFallbackToPairingCapability(params: {
   key: PairingFailureKey;
@@ -9,7 +21,7 @@ export function shouldFallbackToPairingCapability(params: {
   routeRoomId: string;
   hasCapability: boolean;
 }): boolean {
-  // 原网络重试耗尽后无条件回退 capability，会把可恢复断线变成一次性链接重放失败。
+  // 网络重试耗尽后重放一次性 capability，会把可恢复断线变成链接失效。
   // 同房间已有授权也证明其旧 capability 已消费；仅新房间的鉴权失败可重新确认。
   return (
     params.key === "auth" && params.hasCapability && params.storedRoomId !== params.routeRoomId
@@ -17,24 +29,11 @@ export function shouldFallbackToPairingCapability(params: {
 }
 
 /**
- * 镜像连接的重连策略(契约 §3.3 / specs/mobile-remote-control-cf-workers.md:87):
- * - 接管后数据套接字网络类断链 → 自动刷新页面重连:刷新后深链 + 已保存设备凭据
- *   走既有 resume 路径(bridge.open resumed),重连过程由配对页 bridging 界面提示。
- *   房间停止/过期/失效不自动刷新，但保留设备授权；明确吊销或鉴权失败才清理凭据。
- * - 建连阶段对 busy(4008) 与网络类失败做有界重试:旧套接字无 FIN 死亡时,Worker
- *   需等约 75s 心跳超时才释放桥槽(cfworker-remote/src/room.ts:795-811),期间同凭据
- *   重连被 4008 拒绝;Worker 对 busy 不计失败(room.ts:289-295「凭据校验已通过,
- *   不计失败」),重试安全,不会把房间推向 invalidated。
+ * 建连与接管后的断链共用这套有界重试策略：网络闪断、heartbeat 与 busy 可恢复；
+ * auth、房间过期/失效与 stopped 等终态重试无意义，不消耗 Worker 失败计数。
+ * 恢复只替换 RPC services，由 MirrorSessionGate 的 generation 重建 ChannelClient，
+ * 不刷新文档，不另建会话或绕过既有 replayable 快照。
  */
-
-/** 接管后值得自动刷新重连的失败类别;4007 stopped/吊销等终态必须除外。 */
-export const MIRROR_RECONNECT_KEYS: ReadonlySet<PairingFailureKey> = new Set([
-  "network",
-  "heartbeat",
-  "busy",
-]);
-
-/** 建连阶段可自动重试的失败类别;auth/room-missing/expired/invalidated/stopped 重试无意义。 */
 export const DATA_SOCKET_RETRY_KEYS: ReadonlySet<PairingFailureKey> = new Set([
   "busy",
   "network",
@@ -42,54 +41,40 @@ export const DATA_SOCKET_RETRY_KEYS: ReadonlySet<PairingFailureKey> = new Set([
 ]);
 
 export const DATA_SOCKET_RETRY_DELAY_MS = 3_000;
-// 重试截止需覆盖旧桥最长约 75s 的心跳回收(§3.4),并留出 60s resumed 宽限的交叠余量。
+// 覆盖旧桥最长约 75s 的心跳回收，并留出 resumed 宽限的交叠余量。
 export const DATA_SOCKET_RETRY_DEADLINE_MS = 90_000;
 
-// 自动刷新重连的防循环预算:短时间反复断链时停止自动刷新,避免连接风暴;
-// 用户仍可手动刷新(手动路径不设限)。
-export const MIRROR_RELOAD_BUDGET = 5;
-export const MIRROR_RELOAD_WINDOW_MS = 5 * 60_000;
-export const MIRROR_RELOAD_BUDGET_KEY = "lcode:remote-pairing:reconnect-reloads";
-
-/** 纯函数:给定历史刷新时间戳,决定本次是否允许自动刷新,并返回应写回的时间戳序列。 */
-export function planMirrorReconnectReload(
-  stamps: unknown,
-  now: number,
-): { reload: boolean; next: number[] } {
-  const recent = (Array.isArray(stamps) ? stamps : []).filter(
-    (stamp): stamp is number => typeof stamp === "number" && now - stamp < MIRROR_RELOAD_WINDOW_MS,
-  );
-  if (recent.length >= MIRROR_RELOAD_BUDGET) {
-    return { reload: false, next: recent };
-  }
-  return { reload: true, next: [...recent, now] };
-}
-
-/** 接管后断链的自动恢复入口;凭据/房间类死亡直接忽略。 */
-export function scheduleMirrorReconnectReload(
-  closeKey: PairingFailureKey,
-  reconnect?: () => void,
-): void {
-  if (!MIRROR_RECONNECT_KEYS.has(closeKey)) {
-    return;
-  }
-  try {
-    // 旧键兼容读：老会话预算存于 zcode:remote-pairing:reconnect-reloads。
-    const raw =
-      window.sessionStorage.getItem(MIRROR_RELOAD_BUDGET_KEY) ||
-      window.sessionStorage.getItem("zcode:remote-pairing:reconnect-reloads");
-    const plan = planMirrorReconnectReload(raw ? JSON.parse(raw) : [], Date.now());
-    if (!plan.reload) {
-      return;
-    }
-    window.sessionStorage.setItem(MIRROR_RELOAD_BUDGET_KEY, JSON.stringify(plan.next));
-  } catch {
-    // 存储不可用(JSON 损坏/隐私模式):跳过预算检查,仍执行一次重连
-  }
-  // 有恢复回调时优先走原页面重连，不刷新文档；无回调才回退整页刷新。
-  if (reconnect) {
-    reconnect();
-    return;
-  }
-  window.location.reload();
+/**
+ * 可取消重试等待。后台定时器被节流时，online/visible 可唤醒同一轮重试，
+ * 不必新建第二个连接循环；旧 generation 的结果仍由调用方丢弃。
+ */
+export function createRetryDelay(): {
+  wait: () => Promise<void>;
+  wake: () => void;
+  cancel: () => void;
+} {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let finish: (() => void) | undefined;
+  let cancelled = false;
+  return {
+    wait: () =>
+      new Promise<void>((resolve) => {
+        if (cancelled) {
+          resolve();
+          return;
+        }
+        finish = () => {
+          if (timeout !== undefined) clearTimeout(timeout);
+          timeout = undefined;
+          finish = undefined;
+          resolve();
+        };
+        timeout = setTimeout(() => finish?.(), DATA_SOCKET_RETRY_DELAY_MS);
+      }),
+    wake: () => finish?.(),
+    cancel: () => {
+      cancelled = true;
+      finish?.();
+    },
+  };
 }
