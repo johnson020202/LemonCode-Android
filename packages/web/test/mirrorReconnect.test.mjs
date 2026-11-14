@@ -4,10 +4,8 @@ import {
   CREDENTIAL_DEATH_KEYS,
   DATA_SOCKET_RETRY_DEADLINE_MS,
   DATA_SOCKET_RETRY_KEYS,
-  MIRROR_RECONNECT_KEYS,
-  MIRROR_RELOAD_BUDGET,
-  MIRROR_RELOAD_WINDOW_MS,
-  planMirrorReconnectReload,
+  createRetryDelay,
+  retirePairingCredentialOnFailure,
   shouldFallbackToPairingCapability,
 } from "../src/remote/mirrorReconnect.ts";
 
@@ -75,53 +73,35 @@ describe("mirrorReconnect policy", () => {
       false,
     );
   });
-  it("接管后仅网络类断链触发自动刷新,凭据/房间类死亡不重连", () => {
-    assert.equal(MIRROR_RECONNECT_KEYS.has("network"), true);
-    assert.equal(MIRROR_RECONNECT_KEYS.has("heartbeat"), true);
-    assert.equal(MIRROR_RECONNECT_KEYS.has("busy"), true);
-    // 桌面停止/吊销(4007)、凭据失效(4002)、房间关闭(4004/4005/4006)不重连:
-    // 重连必然失败且白耗 §3.1 失败计数
-    assert.equal(MIRROR_RECONNECT_KEYS.has("stopped"), false);
-    assert.equal(MIRROR_RECONNECT_KEYS.has("auth"), false);
-    assert.equal(MIRROR_RECONNECT_KEYS.has("room-missing"), false);
-    assert.equal(MIRROR_RECONNECT_KEYS.has("expired"), false);
-    assert.equal(MIRROR_RECONNECT_KEYS.has("invalidated"), false);
-  });
-
-  it("建连重试仅覆盖 busy/网络类失败,截止时间覆盖旧桥约 75s 心跳回收", () => {
-    assert.equal(DATA_SOCKET_RETRY_KEYS.has("busy"), true);
-    assert.equal(DATA_SOCKET_RETRY_KEYS.has("network"), true);
-    assert.equal(DATA_SOCKET_RETRY_KEYS.has("heartbeat"), true);
-    assert.equal(DATA_SOCKET_RETRY_KEYS.has("auth"), false);
-    assert.equal(DATA_SOCKET_RETRY_KEYS.has("stopped"), false);
+  it("断链重试覆盖半开连接的 heartbeat，终态不重连", () => {
+    for (const key of ["busy", "network", "heartbeat"]) {
+      assert.equal(DATA_SOCKET_RETRY_KEYS.has(key), true);
+    }
+    for (const key of ["auth", "stopped", "room-missing", "expired", "invalidated"]) {
+      assert.equal(DATA_SOCKET_RETRY_KEYS.has(key), false);
+    }
     assert.ok(DATA_SOCKET_RETRY_DEADLINE_MS >= 75_000);
   });
 
-  it("planMirrorReconnectReload:预算内允许刷新并累计时间戳", () => {
-    const plan = planMirrorReconnectReload([], 1_000_000);
-    assert.equal(plan.reload, true);
-    assert.deepEqual(plan.next, [1_000_000]);
+  it("唤醒立即结束同一次重试等待，不创建第二个循环", async () => {
+    const delay = createRetryDelay();
+    const waiting = delay.wait();
+    let resolved = false;
+    void waiting.then(() => { resolved = true; });
+    delay.wake();
+    await waiting;
+    assert.equal(resolved, true);
+    delay.cancel();
   });
 
-  it("planMirrorReconnectReload:窗口外旧时间戳不占预算", () => {
-    const now = MIRROR_RELOAD_WINDOW_MS * 10;
-    const stale = Array.from({ length: MIRROR_RELOAD_BUDGET }, (_, index) => index);
-    const plan = planMirrorReconnectReload(stale, now);
-    assert.equal(plan.reload, true);
-    assert.deepEqual(plan.next, [now]);
+  it("取消后等待立即返回，不残留节流定时器", async () => {
+    const delay = createRetryDelay();
+    delay.cancel();
+    await delay.wait();
   });
 
-  it("planMirrorReconnectReload:窗口内达预算上限则拒绝刷新并保留记录", () => {
-    const now = 10_000_000;
-    const recent = Array.from({ length: MIRROR_RELOAD_BUDGET }, (_, index) => now - index * 1000);
-    const plan = planMirrorReconnectReload(recent, now);
-    assert.equal(plan.reload, false);
-    assert.deepEqual(plan.next, recent);
-  });
-
-  it("planMirrorReconnectReload:非法输入按空历史处理", () => {
-    const plan = planMirrorReconnectReload("garbage", 5_000_000);
-    assert.equal(plan.reload, true);
-    assert.deepEqual(plan.next, [5_000_000]);
+  it("瞬时网络故障与房间停止不退休设备凭据", () => {
+    assert.equal(retirePairingCredentialOnFailure("network", "room", "credential"), false);
+    assert.equal(retirePairingCredentialOnFailure("stopped", "room", "credential"), false);
   });
 });
