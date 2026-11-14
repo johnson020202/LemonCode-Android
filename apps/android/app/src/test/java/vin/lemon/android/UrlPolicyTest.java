@@ -61,6 +61,12 @@ public final class UrlPolicyTest {
             }
         }
         assertEquals(UrlPolicy.Navigation.BLOCK, UrlPolicy.localNavigation(null, "http://127.0.0.1:41234/"));
+        // 远控由 Worker 提供 HTTPS 页面，不应等待本机 Node 解包和启动。
+        assertEquals(UrlPolicy.Navigation.MIRROR,
+                UrlPolicy.localNavigation(null, "https://code.lemon.vin/p/abcdefgh#c=once"));
+        assertTrue(UrlPolicy.isInApp(null, "https://code.lemon.vin/p/abcdefgh#c=once"));
+        assertEquals(UrlPolicy.Navigation.BLOCK,
+                UrlPolicy.localNavigation(null, "http://code.lemon.vin/p/abcdefgh"));
         assertFalse(LOCAL.allows(null));
         assertFalse(LOCAL.allows("http://127.0.0.1:41234" + "a".repeat(9000)));
     }
