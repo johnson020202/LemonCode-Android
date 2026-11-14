@@ -22,8 +22,8 @@ import androidx.core.content.ContextCompat;
  * <p>只使用公开 Android 通知能力（通知渠道 + NotificationCompat），不依赖任何
  * 厂商私有接口；是否提醒由原生壳按前后台判断，页面只负责描述内容。
  *
- * <p>任务进行中使用 Android 16 的标准 Live Updates（promoted ongoing notification），
- * 不接小米超级岛的私有 extras——后者需要小米开发者平台注册与审核，第三方无法自主接入。
+ * <p>任务进行中以 Android 16 的标准 Live Updates（promoted ongoing notification）为主；
+ * 小米设备附带声明未授权自动降级的 {@link XiaomiFocus} 模板，不要求私有审核门禁。
  */
 final class TaskNotifications {
     static final String CHANNEL_UPDATES = "task-updates";
@@ -157,7 +157,7 @@ final class TaskNotifications {
                 .addExtras(new Bundle());
         requestPromotion(builder);
         setShortCriticalText(builder, chip);
-        // 焦点通知模板只在小米放行本应用时才附加；未放行时标准实时动态照常工作。
+        // 未授权时由系统退化为普通通知；不能在应用内加授权死锁门禁。
         XiaomiFocus.apply(context, builder, payload.title, payload.body, chip);
         try {
             manager.notify(payload.notificationId(), builder.build());
