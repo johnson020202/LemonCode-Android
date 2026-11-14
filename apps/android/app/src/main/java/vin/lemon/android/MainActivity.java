@@ -1252,10 +1252,14 @@ public final class MainActivity extends Activity {
     }
 
     private void recoverMirrorAfterNetworkChange() {
-        if (!networkAvailable) MirrorKeepAliveService.start(this);
-        networkAvailable = true;
         WebView view = webView;
-        if (mirrorSessionHost == null || view == null) return;
+        if (mirrorSessionHost == null || view == null) {
+            // 冷启动的网络回调早于页面创建：只记录状态，不能启动空的前台服务。
+            networkAvailable = true;
+            return;
+        }
+        if (!networkAvailable && !hasWindowFocus()) MirrorKeepAliveService.start(this);
+        networkAvailable = true;
         if (pendingMirrorRecovery != null && UrlPolicy.isInApp(activeOrigin, pendingMirrorRecovery)) {
             view.loadUrl(pendingMirrorRecovery);
         } else {
