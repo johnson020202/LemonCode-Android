@@ -1,4 +1,4 @@
-import { ProxyChannel, type IChannelClient } from "@lcode/rpc";
+import { ProxyChannel, type IChannel, type IChannelClient } from "@lcode/rpc";
 import {
   IFileService,
   IMediaPreviewService,
@@ -42,8 +42,10 @@ import {
   IFeedbackService,
   IPromptAttachmentTransferService,
   IWindowControllerService,
+  IWindowWorkspaceService,
   type IServiceAccessor,
 } from "@lcode/services";
+import type { WindowWorkspaceScope } from "@lcode/shared";
 
 /**
  * RemoteServiceAccess — 通过 ChannelClient 自动创建类型安全的服务代理
@@ -66,6 +68,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly broadcastService: IBroadcastService;
   readonly lcodeTaskService: ILCodeTaskService;
   readonly windowControllerService: IWindowControllerService;
+  readonly windowWorkspaceService: IWindowWorkspaceService;
   readonly lcodeAgentService: ILCodeAgentService;
   readonly lcodeSessionService: ILCodeSessionService;
   // cuaPermissionService 在 IServiceAccessor 上是可选（远端 host 不提供），但桌面 renderer
@@ -97,7 +100,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 
-  constructor(channelClient: IChannelClient) {
+  constructor(private readonly channelClient: IChannelClient) {
+    this.windowWorkspaceService = ProxyChannel.toService<IWindowWorkspaceService>(
+      channelClient.getChannel(IWindowWorkspaceService.channelName),
+    );
     this.fileService = ProxyChannel.toService<IFileService>(
       channelClient.getChannel(IFileService.channelName),
     );
@@ -229,5 +235,26 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
       channelClient.getChannel(IPromptAttachmentTransferService.channelName),
     );
+  }
+
+  createWorkspaceServiceAccessor(scope: WindowWorkspaceScope): IServiceAccessor {
+    const owner = this.windowWorkspaceService;
+    const upstream = this.channelClient;
+    // 所有 workspace facade 仍共用已授权窗口的 transport，scope 由 Host 严格验证。
+    return new RemoteServiceAccess({
+      getChannel<T extends IChannel>(channel: string): T {
+        if (
+          channel === IWindowWorkspaceService.channelName ||
+          channel === IWindowControllerService.channelName
+        )
+          return upstream.getChannel<T>(channel);
+        return {
+          call: (command: string, args?: unknown[]) =>
+            owner.call({ scope, channel, command, args }),
+          listen: (event: string, arg?: unknown) =>
+            owner.onDynamicScopedEvent({ scope, channel, event, arg }),
+        } as unknown as T;
+      },
+    });
   }
 }

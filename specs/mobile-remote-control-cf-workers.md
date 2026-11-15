@@ -3,6 +3,8 @@
 当前规则扩展为电脑、手机等多设备同时接入，见 [多设备远程控制](remote-control-multi-device.md)。
 本文原先的一次性链接与单桥约束仅适用于未协商 multiDevice 的兼容房间。
 
+窗口 Host 必须为每个已授权 attachment 注册 `window-workspace`：目录只包含当前连接中的远端工作区（不含认证字段），本地 scope 复用窗口 Local Host，远端 scope 必须同时匹配 session、path、identity 与 generation；内部 channel 和非白名单命令一律拒绝。该接口不新建连接、Agent 或 runtime，只转发到已存在的公开 scoped 服务。
+
 ## 目标与边界
 
 1. 社区版自研移动端远程控制:桌面端(本项目构建)与手机之间用 Cloudflare Worker(`cfworker-remote` 仓库,经 GitHub 连接 Workers Builds 自动部署)做**隧道**。桌面端只做出站连接,无需公网 IP/端口转发,任意地点、任意时间可连。
