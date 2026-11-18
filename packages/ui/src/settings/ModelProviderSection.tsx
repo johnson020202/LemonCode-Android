@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useModelProviders } from "@/hooks/useModelProviders.js";
 import { resolveEntitledAccountProviderAccess } from "@/lib/accountProviderAccess.js";
+import { isProviderSettingsLoadTimeout } from "@/lib/providerSettingsLoadError.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useLCodeStore } from "@/store/StoreProvider.js";
@@ -1036,7 +1037,12 @@ export function ModelProviderSection({
   if (loadError) {
     return (
       <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-ui-base">
-        <p className="text-destructive">{loadError.message}</p>
+        <p className="text-destructive">
+          {isProviderSettingsLoadTimeout(loadError)
+            ? intl.formatMessage({ id: "settings.modelProvider.loadTimeout" })
+            : loadError.message}
+        </p>
+        {/* 超时只代表本机运行时暂时没响应：后台仍在探测，页面恢复后可自动出列表。 */}
         <Button type="button" variant="outline" onClick={reload}>
           {intl.formatMessage({ id: "common.retry" })}
         </Button>

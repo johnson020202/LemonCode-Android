@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from "react";
+import { withDeadline } from "@/lib/asyncDeadline.js";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@lcode/shared";
 import type { IProviderSettingsService, ProviderSettingsView } from "@lcode/services";
@@ -26,6 +27,12 @@ export type TestProviderModelConnectivity = (
   modelId: string,
   options?: ModelConnectivityOptions,
 ) => Promise<ModelConnectivityResult>;
+
+/**
+ * 刷新包含内置模板的远端拉取，弱网下可能长时间不返回。
+ * 没有上限时 refreshing 永远不会复位，页面会被加载卡片一直占住。
+ */
+const REFRESH_TIMEOUT_MS = 30_000;
 
 export function useModelProviders(target: {
   workspacePath: string;
@@ -73,7 +80,13 @@ export function useModelProviders(target: {
     latestRefreshTokenRef.current = refreshToken;
     setRefreshing(true);
     try {
-      const view = await providerSettingsService.refresh("settings-manual");
+      // 手动刷新会连带拉取内置模板；网络挂起时不能让它把 refreshing 永久留在 true，
+      // 否则页面的加载卡片同样会一直转圈。
+      const view = await withDeadline(
+        providerSettingsService.refresh("settings-manual"),
+        REFRESH_TIMEOUT_MS,
+        () => new Error(`模型供应商刷新超过 ${REFRESH_TIMEOUT_MS}ms 未返回`),
+      );
       commitProviderSettingsView(view);
     } catch (err) {
       logger.error("[useModelProviders] 加载模型供应商失败", err);

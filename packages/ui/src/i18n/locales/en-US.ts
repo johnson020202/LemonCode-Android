@@ -3835,6 +3835,8 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.presetEmpty": "Not synced yet. Complete OAuth login first.",
   "settings.modelProvider.customTitle": "Custom providers",
   "settings.modelProvider.refresh": "Refresh",
+  "settings.modelProvider.loadTimeout":
+    "Loading model providers timed out because the local runtime did not respond. The page keeps retrying automatically, or you can press Retry.",
   "settings.modelProvider.reorderProvider": "Drag to reorder provider",
   "settings.modelProvider.reorderModel": "Drag to reorder model",
   "settings.modelProvider.empty": "No custom model providers yet",

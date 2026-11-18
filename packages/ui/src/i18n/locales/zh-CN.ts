@@ -3340,6 +3340,8 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.presetEmpty": "尚未同步，请先完成 OAuth 登录。",
   "settings.modelProvider.customTitle": "自定义供应商",
   "settings.modelProvider.refresh": "刷新",
+  "settings.modelProvider.loadTimeout":
+    "加载模型供应商超时，本机运行时暂时没有响应。页面会自动重试，也可以点「重试」立即重新加载。",
   "settings.modelProvider.reorderProvider": "拖拽调整供应商顺序",
   "settings.modelProvider.reorderModel": "拖拽调整模型顺序",
   "settings.modelProvider.empty": "暂无自定义模型供应商",

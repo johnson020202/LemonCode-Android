@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import type { IProviderSettingsService, ProviderSettingsView } from "@lcode/services";
+import { withDeadline } from "@/lib/asyncDeadline.js";
+import { createProviderSettingsLoadTimeoutError } from "@/lib/providerSettingsLoadError.js";
 import { logger } from "@/logger.js";
 import {
   getProviderSettingsSnapshot,
@@ -7,6 +9,17 @@ import {
   subscribeProviderSettingsSnapshot,
   type ProviderSettingsState,
 } from "@/lib/providerSettingsSnapshot.js";
+
+/**
+ * 首屏读取必须有上限。
+ *
+ * 本机运行时尚未就绪时 getView 可能长期悬着；原先既没有超时也没有重试，
+ * 页面只会一直停在“加载中”，连错误态和重试按钮都进不去。超时后先收敛到
+ * 可重试的错误态，再在后台继续探测，运行时恢复后自动显示列表。
+ */
+const LOAD_ATTEMPT_TIMEOUT_MS = 6_000;
+const LOAD_RETRY_INTERVAL_MS = 5_000;
+const LOAD_MAX_ATTEMPTS = 12;
 
 interface ProviderSettingsRead {
   state: ProviderSettingsState;
@@ -96,15 +109,37 @@ export function useProviderSettingsServiceView(
       }
     };
     const subscription = service.onDidChange(commit);
-    void service.getView().then(commit, (cause) => {
-      if (generation !== generationRef.current) return;
-      const error = cause instanceof Error ? cause : new Error(String(cause));
-      logger.warn("[ProviderSettings] 加载目标 Environment 失败", { error });
-      if (!hasReadyView) setOwned({ service, state: { status: "error", error } });
-    });
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const load = async (): Promise<void> => {
+      attempts += 1;
+      try {
+        const view = await withDeadline(service.getView(), LOAD_ATTEMPT_TIMEOUT_MS, () =>
+          createProviderSettingsLoadTimeoutError(LOAD_ATTEMPT_TIMEOUT_MS),
+        );
+        if (generation !== generationRef.current) return;
+        // 拿到 View 即视为就绪：即使 revision 守卫忽略本次提交，状态也已由事件更新。
+        hasReadyView = true;
+        commit(view);
+      } catch (cause) {
+        if (generation !== generationRef.current) return;
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        logger.warn("[ProviderSettings] 加载目标 Environment 失败", { error });
+        if (!hasReadyView) setOwned({ service, state: { status: "error", error } });
+        // 运行时可能仍在启动：保留可重试错误态，同时后台继续探测，恢复后自动收敛。
+        if (attempts < LOAD_MAX_ATTEMPTS) {
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            void load();
+          }, LOAD_RETRY_INTERVAL_MS);
+        }
+      }
+    };
+    void load();
     return () => {
       generationRef.current += 1;
       subscription.dispose();
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [commitView, reloadVersion, service]);
 
